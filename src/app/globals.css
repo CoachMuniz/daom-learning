@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --daom-blue: #003b8e;
+  --daom-blue-dark: #002b68;
+  --daom-blue-soft: #eaf2ff;
+  --daom-red: #ff1e25;
+  --daom-red-dark: #c8101e;
+  --daom-red-soft: #fff0f1;
+}
+
+body {
+  color: #111827;
+  background-color: #f8fafc;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Accessibility: focus visible outline */
+:focus-visible {
+  outline: 2px solid #003b8e;
+  outline-offset: 2px;
+}

@@ -1,0 +1,138 @@
+{
+  "$schema": "https://tr.designtokens.org/format/",
+  "meta": {
+    "name": "DAOM Weightlifting Design System",
+    "version": "1.0.0",
+    "direction": "Modular Analitica",
+    "framework": "agnostic",
+    "accessibility": "WCAG 2.2 AA target"
+  },
+  "color": {
+    "brand": {
+      "blue": {"value": "#003B8E", "role": "primary"},
+      "blueDark": {"value": "#002B68", "role": "primary-hover"},
+      "blueSoft": {"value": "#EAF2FF", "role": "primary-surface"},
+      "red": {"value": "#FF1E25", "role": "brand-accent"},
+      "redDark": {"value": "#C8101E", "role": "brand-accent-accessible"},
+      "redSoft": {"value": "#FFF0F1", "role": "brand-accent-surface"},
+      "white": {"value": "#FFFFFF"}
+    },
+    "neutral": {
+      "0": {"value": "#FFFFFF"},
+      "50": {"value": "#F8FAFC"},
+      "100": {"value": "#F1F5F9"},
+      "200": {"value": "#E5E7EB"},
+      "300": {"value": "#CBD5E1"},
+      "400": {"value": "#94A3B8"},
+      "500": {"value": "#64748B"},
+      "600": {"value": "#4B5563"},
+      "700": {"value": "#334155"},
+      "800": {"value": "#1E293B"},
+      "900": {"value": "#111827"},
+      "950": {"value": "#0B1220"}
+    },
+    "functional": {
+      "success": {"value": "#16794A"},
+      "successSoft": {"value": "#EAF7F0"},
+      "warning": {"value": "#8A5A00"},
+      "warningSoft": {"value": "#FFF7DF"},
+      "danger": {"value": "#B42318"},
+      "dangerSoft": {"value": "#FFF1F0"},
+      "info": {"value": "#175CD3"},
+      "infoSoft": {"value": "#EFF6FF"}
+    },
+    "data": {
+      "1": {"value": "#003B8E"},
+      "2": {"value": "#C8101E"},
+      "3": {"value": "#16794A"},
+      "4": {"value": "#8A5A00"},
+      "5": {"value": "#6B4EFF"},
+      "6": {"value": "#007A83"},
+      "7": {"value": "#9F4A00"},
+      "8": {"value": "#4B5563"}
+    }
+  },
+  "typography": {
+    "family": {
+      "sans": {"value": "Inter, Arial, Helvetica, sans-serif"},
+      "mono": {"value": "ui-monospace, SFMono-Regular, Consolas, Liberation Mono, monospace"}
+    },
+    "weight": {
+      "regular": {"value": 400},
+      "medium": {"value": 500},
+      "semibold": {"value": 600},
+      "bold": {"value": 700},
+      "extrabold": {"value": 800}
+    },
+    "size": {
+      "xs": {"value": "0.75rem"},
+      "sm": {"value": "0.875rem"},
+      "md": {"value": "1rem"},
+      "lg": {"value": "1.125rem"},
+      "xl": {"value": "1.25rem"},
+      "2xl": {"value": "1.5rem"},
+      "3xl": {"value": "2rem"},
+      "4xl": {"value": "2.5rem"},
+      "5xl": {"value": "3.25rem"}
+    },
+    "lineHeight": {
+      "tight": {"value": 1.15},
+      "heading": {"value": 1.25},
+      "body": {"value": 1.5},
+      "relaxed": {"value": 1.65}
+    }
+  },
+  "space": {
+    "0": {"value": "0"},
+    "1": {"value": "0.25rem"},
+    "2": {"value": "0.5rem"},
+    "3": {"value": "0.75rem"},
+    "4": {"value": "1rem"},
+    "5": {"value": "1.25rem"},
+    "6": {"value": "1.5rem"},
+    "8": {"value": "2rem"},
+    "10": {"value": "2.5rem"},
+    "12": {"value": "3rem"},
+    "16": {"value": "4rem"},
+    "20": {"value": "5rem"},
+    "24": {"value": "6rem"}
+  },
+  "radius": {
+    "sm": {"value": "0.375rem"},
+    "md": {"value": "0.625rem"},
+    "lg": {"value": "0.875rem"},
+    "xl": {"value": "1.25rem"},
+    "pill": {"value": "999px"}
+  },
+  "shadow": {
+    "sm": {"value": "0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.08)"},
+    "md": {"value": "0 8px 24px rgba(15,23,42,.10)"},
+    "lg": {"value": "0 18px 48px rgba(15,23,42,.14)"},
+    "focus": {"value": "0 0 0 3px rgba(23,92,211,.28)"}
+  },
+  "border": {
+    "subtle": {"value": "1px solid #E5E7EB"},
+    "strong": {"value": "1px solid #CBD5E1"},
+    "focus": {"value": "2px solid #175CD3"}
+  },
+  "layout": {
+    "contentMax": {"value": "1440px"},
+    "sidebar": {"value": "264px"},
+    "header": {"value": "64px"},
+    "touchTarget": {"value": "44px"},
+    "gridGap": {"value": "24px"}
+  },
+  "breakpoint": {
+    "sm": {"value": "640px"},
+    "md": {"value": "768px"},
+    "lg": {"value": "1024px"},
+    "xl": {"value": "1280px"},
+    "2xl": {"value": "1536px"}
+  },
+  "motion": {
+    "fast": {"value": "120ms"},
+    "normal": {"value": "180ms"},
+    "slow": {"value": "260ms"},
+    "ease": {"value": "cubic-bezier(.2,.8,.2,1)"}
+  }
+}

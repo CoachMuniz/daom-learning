@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: daom-learning
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: GOOGLE_SHEET_ID
+        value: 1LlUzvMbEoJ4-ATmecOCyRBgy19Hrib4cdkpyLaspjI4
+      - key: TIMEZONE
+        value: America/Argentina/Buenos_Aires
+      - key: CANARY_PROJECT
+        value: DAOM-FORMACION-SHEET-01
+      - key: JWT_SECRET
+        generateValue: true
+      - key: BOT_API_SECRET_KEY
+        generateValue: true
+      - key: SYNC_SECRET_TOKEN
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: daom-learning-db
+          property: connectionString
+
+databases:
+  - name: daom-learning-db
+    databaseName: daom_learning
+    user: daom_learning_user
+    plan: free
+    region: ohio
+    postgresMajorVersion: "16"
