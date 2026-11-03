@@ -231,7 +231,7 @@ export function calculateEffectivePrice(
     discountAmount = Math.min(basePrice, pVal);
   }
 
-  const effectivePrice = Math.max(0, basePrice - discountAmount);
+  const effectivePrice = Math.max(0, Math.round((basePrice - discountAmount) * 100) / 100);
 
   return {
     basePrice,

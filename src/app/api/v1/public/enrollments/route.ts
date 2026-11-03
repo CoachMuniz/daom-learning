@@ -154,11 +154,62 @@ export async function POST(request: Request) {
     }
 
     // 6. Generación de Checkout seguro
-    // En producción se vincula con SDK real de Mercado Pago o Stripe.
-    // En staging / entorno de prueba se provee la URL de checkout segura del sistema.
+    // Aprovecha credenciales activas de Mercado Pago si están configuradas en entorno.
     const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.daom-weightlifting.com";
     const checkoutSessionId = `CHK-${enrollment.id}-${Date.now()}`;
-    const checkoutUrl = `${siteUrl}/capacitaciones/checkout?enrollment_id=${enrollment.id}&provider=${provider}&session_id=${checkoutSessionId}`;
+    const internalCheckoutUrl = `${siteUrl}/capacitaciones/checkout?enrollment_id=${enrollment.id}&provider=${provider}&session_id=${checkoutSessionId}`;
+
+    let mercadopagoPreferenceId: string | null = null;
+    let mercadopagoInitPoint: string | null = null;
+
+    const mpToken =
+      process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN ||
+      process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN ||
+      process.env.MERCADO_PAGO_ACCESS_TOKEN;
+
+    if (provider === "mercadopago" && mpToken && enrollment.amount_total > 0) {
+      try {
+        const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${mpToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            items: [
+              {
+                id: training.capacitacion_id,
+                title: `DAOM Learning: ${training.titulo}`,
+                description: `Modalidad: ${modalityId}`,
+                quantity: 1,
+                unit_price: Number(enrollment.amount_total),
+                currency_id: currency,
+              },
+            ],
+            payer: {
+              name: participant.fullName,
+              email: participant.email,
+            },
+            external_reference: enrollment.id,
+            back_urls: {
+              success: `${siteUrl}/capacitaciones/confirmacion?enrollment_id=${enrollment.id}&status=approved`,
+              pending: `${siteUrl}/capacitaciones/confirmacion?enrollment_id=${enrollment.id}&status=pending`,
+              failure: `${siteUrl}/capacitaciones/confirmacion?enrollment_id=${enrollment.id}&status=failure`,
+            },
+            auto_return: "approved",
+          }),
+        });
+        if (mpRes.ok) {
+          const prefData = await mpRes.json();
+          mercadopagoPreferenceId = prefData.id || null;
+          mercadopagoInitPoint = prefData.sandbox_init_point || prefData.init_point || null;
+        }
+      } catch {
+        // Fallback al flujo interno en caso de error de red
+      }
+    }
+
+    const checkoutUrl = mercadopagoInitPoint || internalCheckoutUrl;
 
     return NextResponse.json(
       {
@@ -181,6 +232,8 @@ export async function POST(request: Request) {
         checkout: {
           provider,
           checkoutUrl,
+          internalCheckoutUrl,
+          mercadopagoPreferenceId,
           sessionId: checkoutSessionId,
           amount: enrollment.amount_total,
           currency: enrollment.currency,

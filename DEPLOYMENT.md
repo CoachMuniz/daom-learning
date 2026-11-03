@@ -93,3 +93,38 @@ curl -I https://tu-dominio.com/sitemap.xml
 curl -I https://tu-dominio.com/robots.txt
 # Esperado: HTTP/1.1 200 OK
 ```
+
+---
+
+## 6. Procedimiento Seguro de Rollback (Sin `git push --force`)
+
+> [!CAUTION]
+> **REGLA ESTRICTA DE SEGURIDAD OPERATIVA:**
+> Queda **estrictamente prohibido** utilizar `git reset --hard` o `git push --force` (`-f`) sobre ramas protegidas o de producción (`main`). El uso de force-push destruye la trazabilidad histórica, perjudica a otros colaboradores y vulnera la cadena de custodia del código institucional.
+
+Ante cualquier incidente o regresión en producción, el rollback debe ejecutarse de forma segura y auditable:
+
+### Nivel 1: Rollback Instantáneo en Render (Sin impacto en Git)
+1. Acceder al dashboard de **Render** -> seleccionar el servicio `daom-learning`.
+2. Ir a la pestaña **Deploys**.
+3. Localizar el despliegue anterior estable y hacer clic en **Rollback to this deploy**.
+4. Render volverá a activar de inmediato el contenedor probado anterior sin requerir un nuevo build.
+
+### Nivel 2: Reversión Formal y Auditable en Git (Forward-Only Revert)
+Para revertir el commit causante manteniendo la integridad del historial:
+```bash
+# 1. Posicionarse en la rama principal sincronizada
+git checkout main
+git pull origin main
+
+# 2. Si el cambio provino de un Merge Commit:
+git revert -m 1 <hash_del_merge_commit> --no-edit
+
+# 3. Si fue un commit individual:
+git revert <hash_del_commit> --no-edit
+
+# 4. Publicar la reversión de forma estándar (SIN --force):
+git push origin main
+```
+Este flujo genera un commit explícito `Revert "..."` que conserva el registro completo de auditoría y dispara un despliegue limpio y reproducible.
+

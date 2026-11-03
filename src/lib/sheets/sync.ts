@@ -81,6 +81,24 @@ export function normalizeVerificationStatus(raw?: string | null): VerificationSt
 }
 
 /**
+ * Convierte de forma robusta valores numéricos de Google Sheets a Number,
+ * soportando notación en español con coma decimal (ej: "26,98", "1.234,56")
+ * y notación estándar con punto decimal.
+ */
+export function parseSheetNumber(val: string | null | undefined): number {
+  if (!val) return 0;
+  const s = String(val).trim();
+  if (!s) return 0;
+  if (s.includes(",")) {
+    if (s.includes(".")) {
+      return parseFloat(s.replace(/\./g, "").replace(",", ".")) || 0;
+    }
+    return parseFloat(s.replace(",", ".")) || 0;
+  }
+  return parseFloat(s) || 0;
+}
+
+/**
  * Ejecuta la sincronización completa preservando datos existentes en caso de falla.
  */
 export async function syncGoogleSheetsCatalog(options: SyncOptions = {}): Promise<SyncReport> {
@@ -358,14 +376,14 @@ export async function syncGoogleSheetsCatalog(options: SyncOptions = {}): Promis
       const ofertaId = row["oferta_id"];
       const mercado = (row["mercado"] || "AR").toUpperCase();
       const moneda = (row["moneda"] || "ARS").toUpperCase();
-      const precioBase = parseFloat(row["precio_base"] || "0") || 0;
+      const precioBase = parseSheetNumber(row["precio_base"]);
       if (!precioId || !ofertaId) {
         recordsSkipped++;
         continue;
       }
 
       const promocionTipo = row["promocion_tipo"] || null;
-      const promocionValor = row["promocion_valor"] ? parseFloat(row["promocion_valor"]) : null;
+      const promocionValor = row["promocion_valor"] ? parseSheetNumber(row["promocion_valor"]) : null;
       const promocionInicio = row["promocion_inicio"] || null;
       const promocionFin = row["promocion_fin"] || null;
       const estado = row["estado"] || "activo";
