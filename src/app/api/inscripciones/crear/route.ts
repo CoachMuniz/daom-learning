@@ -52,7 +52,12 @@ export async function POST(request: Request) {
     // Si hay ofertaId, buscar precios de la oferta
     if (ofertaId) {
       const prices = await getPricesForEdition(ofertaId, false);
-      const matchedPrice = prices.find((p) => p.mercado === market);
+      const matchedPrice = prices.find(
+        (p) =>
+          p.mercado === market ||
+          (market === "AR" && ((p.mercado as string) === "ARGENTINA" || p.moneda === "ARS")) ||
+          (market === "INT" && ((p.mercado as string) === "INTERNACIONAL" || p.moneda === "USD"))
+      );
       if (matchedPrice) {
         amount = Number(matchedPrice.precio_base);
       }

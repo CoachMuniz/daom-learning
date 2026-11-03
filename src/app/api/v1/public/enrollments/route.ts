@@ -79,7 +79,12 @@ export async function POST(request: Request) {
 
     if (targetOfertaId) {
       const prices = await getPricesForEdition(targetOfertaId, true);
-      const matchedPrice = prices.find((p) => p.mercado === market);
+      const matchedPrice = prices.find(
+        (p) =>
+          p.mercado === market ||
+          (market === "AR" && ((p.mercado as string) === "ARGENTINA" || p.moneda === "ARS")) ||
+          (market === "INT" && ((p.mercado as string) === "INTERNACIONAL" || p.moneda === "USD"))
+      );
 
       if (matchedPrice) {
         // Calcular precio efectivo con promociones vigentes
