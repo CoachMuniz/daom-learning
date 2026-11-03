@@ -14,7 +14,7 @@
  * 5. On Demand no acredita asistencia presencial ni streaming en vivo.
  */
 
-import type { ModalityId, MarketType, CurrencyType } from "@/lib/types";
+import type { ModalityId, MarketType, CurrencyType, Price } from "@/lib/types";
 
 export interface ModalityChangeFeeResult {
   isEligible: boolean;
@@ -31,6 +31,16 @@ export interface OnDemandPricingResult {
   surchargeAmount: number;
   finalPrice: number;
   isLatePurchase: boolean;
+}
+
+export interface EffectivePriceResult {
+  basePrice: number;
+  discountAmount: number;
+  effectivePrice: number;
+  isPromoActive: boolean;
+  promoType?: string | null;
+  promoValue?: number | null;
+  promoDescription?: string | null;
 }
 
 /**
@@ -155,4 +165,81 @@ export function calculateOnDemandPrice(
  */
 export function grantsAttendance(modalityId: ModalityId): boolean {
   return modalityId === "presencial" || modalityId === "streaming";
+}
+
+/**
+ * Calcula el precio efectivo aplicando promociones vigentes según fecha y reglas comerciales.
+ * Valida fechas de inicio y fin de promoción para evitar descuentos vencidos.
+ */
+export function calculateEffectivePrice(
+  price: Price,
+  referenceDate: Date = new Date()
+): EffectivePriceResult {
+  const basePrice = Number(price.precio_base) || 0;
+
+  if (!price.promocion_tipo || price.promocion_valor === null || price.promocion_valor === undefined) {
+    return {
+      basePrice,
+      discountAmount: 0,
+      effectivePrice: basePrice,
+      isPromoActive: false,
+    };
+  }
+
+  // Verificar fecha de inicio
+  if (price.promocion_inicio) {
+    const startStr = price.promocion_inicio.includes("T")
+      ? price.promocion_inicio
+      : `${price.promocion_inicio}T00:00:00-03:00`;
+    const startDate = new Date(startStr);
+    if (!isNaN(startDate.getTime()) && referenceDate.getTime() < startDate.getTime()) {
+      return {
+        basePrice,
+        discountAmount: 0,
+        effectivePrice: basePrice,
+        isPromoActive: false,
+        promoDescription: "Promoción aún no vigente",
+      };
+    }
+  }
+
+  // Verificar fecha de expiración
+  if (price.promocion_fin) {
+    const endStr = price.promocion_fin.includes("T")
+      ? price.promocion_fin
+      : `${price.promocion_fin}T23:59:59-03:00`;
+    const endDate = new Date(endStr);
+    if (!isNaN(endDate.getTime()) && referenceDate.getTime() > endDate.getTime()) {
+      return {
+        basePrice,
+        discountAmount: 0,
+        effectivePrice: basePrice,
+        isPromoActive: false,
+        promoDescription: "Promoción finalizada",
+      };
+    }
+  }
+
+  // Calcular descuento
+  let discountAmount = 0;
+  const pType = price.promocion_tipo.toLowerCase();
+  const pVal = Number(price.promocion_valor);
+
+  if (pType.includes("porcentaje") || pType.includes("%")) {
+    discountAmount = Math.round(basePrice * (pVal / 100) * 100) / 100;
+  } else {
+    discountAmount = Math.min(basePrice, pVal);
+  }
+
+  const effectivePrice = Math.max(0, basePrice - discountAmount);
+
+  return {
+    basePrice,
+    discountAmount,
+    effectivePrice,
+    isPromoActive: true,
+    promoType: price.promocion_tipo,
+    promoValue: pVal,
+    promoDescription: `Descuento ${price.promocion_tipo}: ${pVal}${pType.includes("porcentaje") || pType.includes("%") ? "%" : " " + price.moneda}`,
+  };
 }

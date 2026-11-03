@@ -88,6 +88,64 @@ export async function getTrainingById(
   return training;
 }
 
+function normalizeForSlug(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+export async function getTrainingBySlugOrId(
+  slugOrId: string,
+  includeUnpublished = false
+): Promise<Training | null> {
+  const clean = slugOrId.trim();
+
+  // 1. Coincidencia exacta de capacitacion_id
+  const direct = await getTrainingById(clean, includeUnpublished);
+  if (direct) return direct;
+
+  // 2. Coincidencia exacta en mayúsculas
+  const upper = clean.toUpperCase();
+  const directUpper = await getTrainingById(upper, includeUnpublished);
+  if (directUpper) return directUpper;
+
+  // 3. Con prefijos estándar de tipo (SEM-, CLI-, WOR-, TUT-)
+  const prefixes = ["SEM", "CLI", "WOR", "TUT"];
+  for (const p of prefixes) {
+    const candidate = `${p}-${upper}`;
+    const match = await getTrainingById(candidate, includeUnpublished);
+    if (match) return match;
+  }
+
+  // 4. Búsqueda por slug normalizado y sin tildes entre capacitaciones
+  const list = includeUnpublished
+    ? await getAllTrainingsAdmin()
+    : await getPublishedTrainings();
+
+  const targetNorm = normalizeForSlug(clean);
+
+  const found = list.find((t) => {
+    const idNorm = normalizeForSlug(t.capacitacion_id);
+    if (idNorm === targetNorm || idNorm.includes(targetNorm)) return true;
+
+    const strippedId = normalizeForSlug(t.capacitacion_id.replace(/^(sem|cli|wor|tut)-/i, ""));
+    if (strippedId === targetNorm || strippedId.includes(targetNorm)) return true;
+
+    const titleNorm = normalizeForSlug(t.titulo);
+    if (titleNorm.includes(targetNorm) || targetNorm.includes(titleNorm)) return true;
+
+    return false;
+  });
+
+  if (found) {
+    return await getTrainingById(found.capacitacion_id, includeUnpublished);
+  }
+
+  return null;
+}
+
 export async function getInstructorsForTraining(trainingId: string): Promise<Instructor[]> {
   const db = getDatabase();
   const sql = `
@@ -290,6 +348,64 @@ export async function createUser(data: {
   const created = await findUserById(userId);
   if (!created) throw new Error("Error al recuperar el usuario recién creado");
   return created;
+}
+
+export async function findOrCreateParticipant(data: {
+  email: string;
+  fullName: string;
+  phone?: string;
+  country?: string;
+  documentId?: string;
+}): Promise<User> {
+  const existing = await findUserByEmail(data.email);
+  if (existing) {
+    const db = getDatabase();
+    if (data.phone || data.documentId || data.country) {
+      await db.run(
+        `UPDATE profiles SET
+          phone = COALESCE(?, phone),
+          document_id = COALESCE(?, document_id),
+          country = COALESCE(?, country),
+          updated_at = ?
+         WHERE user_id = ?`,
+        [data.phone || null, data.documentId || null, data.country || null, new Date().toISOString(), existing.id]
+      );
+    }
+    const refreshed = await findUserById(existing.id);
+    return refreshed || existing;
+  }
+
+  const randomPass = `auto_part_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+  const { hashPassword } = await import("@/lib/auth/passwords");
+  const passwordHash = await hashPassword(randomPass);
+
+  return await createUser({
+    email: data.email,
+    passwordHash,
+    fullName: data.fullName,
+    role: "PARTICIPANT",
+    phone: data.phone,
+    country: data.country || "AR",
+    documentId: data.documentId,
+  });
+}
+
+export async function getUserEnrollmentForTraining(
+  userId: string,
+  capacitacionId: string,
+  ofertaId?: string | null
+): Promise<Enrollment | null> {
+  const db = getDatabase();
+  let sql = `SELECT * FROM enrollments WHERE user_id = ? AND capacitacion_id = ?`;
+  const params: any[] = [userId, capacitacionId];
+  if (ofertaId) {
+    sql += ` AND (oferta_id = ? OR oferta_id IS NULL)`;
+    params.push(ofertaId);
+  }
+  sql += ` AND status IN ('pendiente_pago', 'confirmada') ORDER BY created_at DESC LIMIT 1`;
+  const row = await db.get<Enrollment>(sql, params);
+  if (!row) return null;
+  return await getEnrollmentById(row.id);
 }
 
 // ==============================================================================

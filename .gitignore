@@ -23,8 +23,8 @@
 .env
 
 # SQLite local databases
-/data/*.db
-/data/*.sqlite
+/data/*.db*
+/data/*.sqlite*
 !/data/.gitkeep
 
 # Vercel

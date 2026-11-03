@@ -1,0 +1,198 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import {
+  getTrainingById,
+  getPricesForEdition,
+  findOrCreateParticipant,
+  getUserEnrollmentForTraining,
+  createEnrollment,
+} from "@/lib/db/repository";
+import {
+  calculateEffectivePrice,
+  calculateOnDemandPrice,
+  getPaymentGatewayForMarket,
+} from "@/lib/commercial/rules";
+import type { ModalityId } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+const PublicEnrollmentSchema = z.object({
+  capacitacionId: z.string().min(1, "El ID de capacitación es requerido"),
+  ofertaId: z.string().optional().nullable(),
+  modalityId: z.enum(["presencial", "streaming", "on_demand"]),
+  market: z.enum(["AR", "INT"]).default("AR"),
+  participant: z.object({
+    fullName: z.string().min(2, "El nombre completo debe tener al menos 2 caracteres"),
+    email: z.string().email("El correo electrónico no es válido"),
+    phone: z.string().optional().nullable(),
+    country: z.string().optional().nullable(),
+    documentId: z.string().optional().nullable(),
+  }),
+  notes: z.string().optional().nullable(),
+  idempotencyKey: z.string().optional().nullable(),
+});
+
+export async function POST(request: Request) {
+  try {
+    const json = await request.json();
+    const parsed = PublicEnrollmentSchema.safeParse(json);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "VALIDATION_ERROR",
+          issues: parsed.error.issues,
+          canary: "DAOM-FORMACION-SHEET-01",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { capacitacionId, ofertaId, modalityId, market, participant, notes } = parsed.data;
+
+    // 1. Validar que la capacitación exista y esté publicada y verificada
+    const training = await getTrainingById(capacitacionId, false);
+    if (!training) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "NOT_FOUND",
+          message: `Capacitación no encontrada o no habilitada para inscripción: ${capacitacionId}`,
+          canary: "DAOM-FORMACION-SHEET-01",
+        },
+        { status: 404 }
+      );
+    }
+
+    // 2. Resolver edición
+    const edition = ofertaId
+      ? training.ediciones?.find((e) => e.oferta_id === ofertaId)
+      : training.ediciones?.[0];
+
+    const targetOfertaId = edition?.oferta_id || ofertaId || null;
+
+    // 3. Cálculo de precio en servidor (NUNCA confiar en lo enviado por el cliente)
+    let amountTotal = 0;
+    const currency = market === "AR" ? "ARS" : "USD";
+    const provider = getPaymentGatewayForMarket(market);
+
+    if (targetOfertaId) {
+      const prices = await getPricesForEdition(targetOfertaId, true);
+      const matchedPrice = prices.find((p) => p.mercado === market);
+
+      if (matchedPrice) {
+        // Calcular precio efectivo con promociones vigentes
+        const effectiveCalc = calculateEffectivePrice(matchedPrice);
+        amountTotal = effectiveCalc.effectivePrice;
+      }
+    }
+
+    // Si es On Demand, aplicar regla de cálculo según fecha del evento si corresponde
+    if (modalityId === "on_demand" && amountTotal > 0 && edition?.fecha_inicio) {
+      const onDemandCalc = calculateOnDemandPrice(amountTotal, edition.fecha_inicio);
+      amountTotal = onDemandCalc.finalPrice;
+    }
+
+    // 4. Crear o vincular participante seguro (sin exigir contraseña obligatoria)
+    const user = await findOrCreateParticipant({
+      email: participant.email,
+      fullName: participant.fullName,
+      phone: participant.phone || undefined,
+      country: participant.country || (market === "AR" ? "AR" : "INT"),
+      documentId: participant.documentId || undefined,
+    });
+
+    // 5. Prevenir inscripciones duplicadas
+    const existingEnrollment = await getUserEnrollmentForTraining(
+      user.id,
+      training.capacitacion_id,
+      targetOfertaId
+    );
+
+    let enrollment = existingEnrollment;
+
+    if (existingEnrollment) {
+      if (existingEnrollment.status === "confirmada") {
+        return NextResponse.json(
+          {
+            success: true,
+            alreadyConfirmed: true,
+            message: "Ya posees una inscripción confirmada para esta capacitación.",
+            enrollment: {
+              id: existingEnrollment.id,
+              capacitacion_id: existingEnrollment.capacitacion_id,
+              modality_id: existingEnrollment.modality_id,
+              amount_total: existingEnrollment.amount_total,
+              currency: existingEnrollment.currency,
+              status: existingEnrollment.status,
+            },
+            canary: "DAOM-FORMACION-SHEET-01",
+          },
+          { status: 200 }
+        );
+      }
+      // Si ya tiene una pendiente_pago, reusamos el registro para evitar duplicar
+      enrollment = existingEnrollment;
+    } else {
+      // Crear nueva inscripción
+      enrollment = await createEnrollment({
+        userId: user.id,
+        capacitacionId: training.capacitacion_id,
+        ofertaId: targetOfertaId,
+        modalityId: modalityId as ModalityId,
+        currency,
+        amountTotal,
+        paymentMethod: provider,
+        notes: notes || null,
+      });
+    }
+
+    // 6. Generación de Checkout seguro
+    // En producción se vincula con SDK real de Mercado Pago o Stripe.
+    // En staging / entorno de prueba se provee la URL de checkout segura del sistema.
+    const siteUrl = process.env.NEXT_PUBLIC_APP_URL || "https://www.daom-weightlifting.com";
+    const checkoutSessionId = `CHK-${enrollment.id}-${Date.now()}`;
+    const checkoutUrl = `${siteUrl}/capacitaciones/checkout?enrollment_id=${enrollment.id}&provider=${provider}&session_id=${checkoutSessionId}`;
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Inscripción iniciada con éxito. Procedé al checkout para confirmar tu vacante.",
+        enrollment: {
+          id: enrollment.id,
+          capacitacion_id: enrollment.capacitacion_id,
+          oferta_id: enrollment.oferta_id,
+          modality_id: enrollment.modality_id,
+          amount_total: enrollment.amount_total,
+          currency: enrollment.currency,
+          status: enrollment.status,
+          user: {
+            id: user.id,
+            email: user.email,
+            full_name: user.full_name,
+          },
+        },
+        checkout: {
+          provider,
+          checkoutUrl,
+          sessionId: checkoutSessionId,
+          amount: enrollment.amount_total,
+          currency: enrollment.currency,
+        },
+        canary: "DAOM-FORMACION-SHEET-01",
+      },
+      { status: existingEnrollment ? 200 : 201 }
+    );
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "INTERNAL_ERROR",
+        message: err.message || "Error al procesar la inscripción",
+        canary: "DAOM-FORMACION-SHEET-01",
+      },
+      { status: 500 }
+    );
+  }
+}
