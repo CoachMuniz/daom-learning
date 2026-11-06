@@ -555,6 +555,19 @@ export async function requestModalityChange(
   });
 }
 
+export async function getPendingEnrollments(limit = 20): Promise<Enrollment[]> {
+  const db = getDatabase();
+  const rows = await db.query<Enrollment>(
+    `SELECT * FROM enrollments WHERE status = 'pendiente_pago' ORDER BY created_at DESC LIMIT ?`,
+    [limit]
+  );
+  for (const enr of rows) {
+    enr.training = (await getTrainingById(enr.capacitacion_id, true)) ?? undefined;
+    enr.user = (await findUserById(enr.user_id)) ?? undefined;
+  }
+  return rows;
+}
+
 export async function recordPayment(data: {
   enrollmentId: string;
   externalPaymentId?: string | null;
@@ -566,6 +579,29 @@ export async function recordPayment(data: {
   rawPayload?: Record<string, any> | string | null;
 }): Promise<PaymentRecord> {
   const db = getDatabase();
+
+  // 1. Idempotencia estricta por externalPaymentId
+  if (data.externalPaymentId) {
+    const existingPayment = await db.get<PaymentRecord>(
+      `SELECT * FROM payment_records WHERE external_payment_id = ?`,
+      [data.externalPaymentId]
+    );
+    if (existingPayment) {
+      // Si el pago ya fue registrado y aprobado, asegurar que la inscripción esté confirmada y retornar
+      if (data.status === "approved") {
+        const enr = await db.get<Enrollment>(`SELECT * FROM enrollments WHERE id = ?`, [data.enrollmentId]);
+        if (enr && enr.status !== "confirmada") {
+          await db.run(
+            `UPDATE enrollments SET status = 'confirmada', amount_paid = ?, updated_at = ? WHERE id = ?`,
+            [data.amount, new Date().toISOString(), data.enrollmentId]
+          );
+          await autoGrantMaterialForEnrollment(enr.user_id, enr.capacitacion_id, enr.id);
+        }
+      }
+      return existingPayment;
+    }
+  }
+
   const id = `PAY-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const nowIso = new Date().toISOString();
   const payloadStr = data.rawPayload
@@ -591,16 +627,22 @@ export async function recordPayment(data: {
     ]
   );
 
-  // Si el pago es aprobado, actualizar la inscripción y monto pagado
+  // Si el pago es aprobado, actualizar la inscripción y monto pagado de forma idempotente
   if (data.status === "approved") {
-    await db.run(
-      `UPDATE enrollments SET status = 'confirmada', amount_paid = amount_paid + ?, updated_at = ? WHERE id = ?`,
-      [data.amount, nowIso, data.enrollmentId]
-    );
-
-    // Regla obligatoria: Habilitar inmediatamente el material complementario ZIP tras pago confirmado
     const enr = await db.get<Enrollment>(`SELECT * FROM enrollments WHERE id = ?`, [data.enrollmentId]);
     if (enr) {
+      if (enr.status !== "confirmada") {
+        await db.run(
+          `UPDATE enrollments SET status = 'confirmada', amount_paid = ?, updated_at = ? WHERE id = ?`,
+          [data.amount, nowIso, data.enrollmentId]
+        );
+      } else {
+        await db.run(
+          `UPDATE enrollments SET updated_at = ? WHERE id = ?`,
+          [nowIso, data.enrollmentId]
+        );
+      }
+      // Regla obligatoria: Habilitar inmediatamente el material complementario ZIP tras pago confirmado
       await autoGrantMaterialForEnrollment(enr.user_id, enr.capacitacion_id, enr.id);
     }
   }

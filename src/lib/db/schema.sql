@@ -198,6 +198,7 @@ CREATE TABLE IF NOT EXISTS payment_records (
 
 CREATE INDEX IF NOT EXISTS idx_payments_enrollment ON payment_records(enrollment_id);
 CREATE INDEX IF NOT EXISTS idx_payments_external ON payment_records(external_payment_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_external_unique ON payment_records(external_payment_id) WHERE external_payment_id IS NOT NULL;
 
 -- 12. Activos de Material Educativo (ZIP)
 CREATE TABLE IF NOT EXISTS material_assets (

@@ -61,7 +61,12 @@ export interface VerifiedPaymentResult {
  * Consulta oficial Server-to-Server a la API de Mercado Pago para obtener el estado real de un pago.
  * NUNCA se confía en los datos recibidos por el cliente o en el cuerpo de la notificación.
  */
-export async function fetchMercadoPagoPayment(paymentId: string | number): Promise<VerifiedPaymentResult> {
+export const EXPECTED_COLLECTOR_ID = process.env.MERCADOPAGO_COLLECTOR_ID || "1097736220";
+
+export async function fetchMercadoPagoPayment(
+  paymentId: string | number,
+  maxRetries = 3
+): Promise<VerifiedPaymentResult> {
   const token = getMercadoPagoAccessToken();
   if (!token) {
     return {
@@ -71,49 +76,71 @@ export async function fetchMercadoPagoPayment(paymentId: string | number): Promi
     };
   }
 
-  try {
-    const cleanId = String(paymentId).trim().replace(/^MP-/, "");
-    const res = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(cleanId)}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
+  const cleanId = String(paymentId).trim().replace(/^MP-/, "");
+  let lastStatus = 0;
+  let lastError = "";
 
-    if (!res.ok) {
-      return {
-        ok: false,
-        httpStatus: res.status,
-        error: `Error HTTP ${res.status} al consultar pago en Mercado Pago`,
-      };
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`https://api.mercadopago.com/v1/payments/${encodeURIComponent(cleanId)}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "User-Agent": "DAOM-Learning-Payment-Service/2.0",
+        },
+        cache: "no-store",
+      });
+
+      lastStatus = res.status;
+
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          ok: true,
+          httpStatus: 200,
+          payment: {
+            id: data.id,
+            status: data.status,
+            status_detail: data.status_detail,
+            external_reference: data.external_reference || null,
+            transaction_amount: Number(data.transaction_amount || 0),
+            currency_id: data.currency_id || "ARS",
+            payer_email: data.payer?.email || null,
+            date_approved: data.date_approved || null,
+            payment_method_id: data.payment_method_id || null,
+            raw: data,
+          },
+        };
+      }
+
+      const errText = await res.text().catch(() => "");
+      lastError = `Error HTTP ${res.status} al consultar pago en Mercado Pago: ${errText.slice(0, 100)}`;
+
+      // Si no es transitorio (ej. 401 Unauthorized), no reintentar
+      if (res.status !== 404 && res.status !== 429 && res.status < 500) {
+        return {
+          ok: false,
+          httpStatus: res.status,
+          error: lastError,
+        };
+      }
+    } catch (err: any) {
+      lastStatus = 0;
+      lastError = err.message || "Excepción de red al conectar con Mercado Pago";
     }
 
-    const data = await res.json();
-    return {
-      ok: true,
-      httpStatus: 200,
-      payment: {
-        id: data.id,
-        status: data.status,
-        status_detail: data.status_detail,
-        external_reference: data.external_reference || null,
-        transaction_amount: Number(data.transaction_amount || 0),
-        currency_id: data.currency_id || "ARS",
-        payer_email: data.payer?.email || null,
-        date_approved: data.date_approved || null,
-        payment_method_id: data.payment_method_id || null,
-        raw: data,
-      },
-    };
-  } catch (err: any) {
-    return {
-      ok: false,
-      httpStatus: 500,
-      error: err.message || "Excepción de red al conectar con Mercado Pago",
-    };
+    if (attempt < maxRetries) {
+      const delay = 600 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
+
+  return {
+    ok: false,
+    httpStatus: lastStatus || 500,
+    error: lastError || "Agotados los reintentos al consultar Mercado Pago",
+  };
 }
 
 /**
@@ -164,12 +191,21 @@ export async function verifyAndProcessEnrollmentPayment(options: {
     };
   }
 
-  // 2. Verificar moneda ARS
+  // 2. Verificar moneda ARS y Collector ID autorizado
   if (p.currency_id !== "ARS") {
     return {
       success: false,
       status: "invalid_currency",
       message: `Moneda inválida en pago: ${p.currency_id}. Se esperaba ARS.`,
+    };
+  }
+
+  const actualCollector = String(p.raw?.collector_id || "");
+  if (actualCollector && EXPECTED_COLLECTOR_ID && actualCollector !== String(EXPECTED_COLLECTOR_ID)) {
+    return {
+      success: false,
+      status: "unauthorized_collector",
+      message: `Collector ID no autorizado en pago: ${actualCollector}. Se esperaba ${EXPECTED_COLLECTOR_ID}.`,
     };
   }
 
