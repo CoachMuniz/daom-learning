@@ -145,7 +145,8 @@ class SqliteDatabase implements IDatabase {
     }
     this.db = new DatabaseSync(dbPath);
     try {
-      this.db.exec("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 10000;");
+      this.db.exec("PRAGMA journal_mode = WAL;");
+      this.db.exec("PRAGMA busy_timeout = 15000;");
     } catch {}
   }
 
@@ -155,10 +156,24 @@ class SqliteDatabase implements IDatabase {
 
   private ensureSchema(): void {
     if (this.schemaApplied) return;
+    try {
+      const check = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='trainings'").get();
+      if (check) {
+        this.schemaApplied = true;
+        return;
+      }
+    } catch {}
+
     const schemaPath = path.join(process.cwd(), "src", "lib", "db", "schema.sql");
     if (fs.existsSync(schemaPath)) {
       const sql = fs.readFileSync(schemaPath, "utf-8");
-      this.db.exec(sql);
+      try {
+        this.db.exec(sql);
+      } catch (err: any) {
+        if (!err.message?.includes("already exists") && !err.message?.includes("database is locked")) {
+          throw err;
+        }
+      }
     }
     this.schemaApplied = true;
   }
