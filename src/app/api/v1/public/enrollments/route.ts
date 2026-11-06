@@ -161,14 +161,20 @@ export async function POST(request: Request) {
 
     let mercadopagoPreferenceId: string | null = null;
     let mercadopagoInitPoint: string | null = null;
+    let mercadopagoSandboxInitPoint: string | null = null;
 
     const mpToken =
       process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN ||
       process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN ||
+      process.env.MERCADOPAGO_ACCESS_TOKEN ||
       process.env.MERCADO_PAGO_ACCESS_TOKEN;
 
     if (provider === "mercadopago" && mpToken && enrollment.amount_total > 0) {
       try {
+        const nameParts = (participant.fullName || "Participante DAOM").trim().split(/\s+/);
+        const firstName = nameParts[0] || "Participante";
+        const lastName = nameParts.slice(1).join(" ") || "DAOM";
+
         const mpRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
           method: "POST",
           headers: {
@@ -179,18 +185,39 @@ export async function POST(request: Request) {
             items: [
               {
                 id: training.capacitacion_id,
-                title: `DAOM Learning: ${training.titulo}`,
-                description: `Modalidad: ${modalityId}`,
+                title: `DAOM Learning: ${training.titulo}`.slice(0, 255),
+                description: `Modalidad: ${modalityId} - DAOM Weightlifting`.slice(0, 255),
+                category_id: "learnings",
                 quantity: 1,
                 unit_price: Number(enrollment.amount_total),
                 currency_id: currency,
               },
             ],
             payer: {
-              name: participant.fullName,
+              name: firstName,
+              surname: lastName,
               email: participant.email,
+              ...(participant.documentId
+                ? {
+                    identification: {
+                      type: "DNI",
+                      number: participant.documentId.replace(/\D/g, "") || participant.documentId,
+                    },
+                  }
+                : {}),
+              ...(participant.phone
+                ? {
+                    phone: {
+                      area_code: "",
+                      number: participant.phone,
+                    },
+                  }
+                : {}),
             },
+            statement_descriptor: "DAOM LEARNING",
+            binary_mode: true,
             external_reference: enrollment.id,
+            notification_url: `${siteUrl}/api/v1/webhooks/mercadopago`,
             back_urls: {
               success: `${siteUrl}/capacitaciones/confirmacion?enrollment_id=${enrollment.id}&status=approved`,
               pending: `${siteUrl}/capacitaciones/confirmacion?enrollment_id=${enrollment.id}&status=pending`,
@@ -202,14 +229,19 @@ export async function POST(request: Request) {
         if (mpRes.ok) {
           const prefData = await mpRes.json();
           mercadopagoPreferenceId = prefData.id || null;
-          mercadopagoInitPoint = prefData.sandbox_init_point || prefData.init_point || null;
+          mercadopagoInitPoint = prefData.init_point || null;
+          mercadopagoSandboxInitPoint = prefData.sandbox_init_point || null;
         }
       } catch {
         // Fallback al flujo interno en caso de error de red
       }
     }
 
-    const checkoutUrl = mercadopagoInitPoint || internalCheckoutUrl;
+    const isSandboxToken = mpToken?.startsWith("TEST-");
+    const checkoutUrl =
+      (isSandboxToken && mercadopagoSandboxInitPoint)
+        ? mercadopagoSandboxInitPoint
+        : (mercadopagoInitPoint || mercadopagoSandboxInitPoint || internalCheckoutUrl);
 
     return NextResponse.json(
       {
@@ -234,11 +266,14 @@ export async function POST(request: Request) {
           checkoutUrl,
           internalCheckoutUrl,
           mercadopagoPreferenceId,
+          mercadopagoInitPoint,
+          mercadopagoSandboxInitPoint,
           sessionId: checkoutSessionId,
           amount: enrollment.amount_total,
           currency: enrollment.currency,
         },
         canary: "DAOM-FORMACION-SHEET-01",
+        canary_security: "DAOM-MERCADOPAGO-MCP-01",
       },
       { status: existingEnrollment ? 200 : 201 }
     );
