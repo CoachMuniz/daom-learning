@@ -22,7 +22,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: BOT_API_SECRET_KEY
-        generateValue: true
+        sync: false
       - key: SYNC_SECRET_TOKEN
         generateValue: true
       - key: DATABASE_URL
@@ -30,6 +30,8 @@ services:
           name: daom-learning-db
           property: connectionString
       - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_PUBLIC_KEY
         sync: false
       - key: MERCADOPAGO_WEBHOOK_SECRET
         sync: false

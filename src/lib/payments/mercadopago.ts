@@ -18,13 +18,22 @@ import {
   findIntegrationEvent,
 } from "@/lib/db/repository";
 
+/**
+ * Recupera el Access Token oficial de Mercado Pago para la aplicación autorizada (4543074824173101).
+ * Descarta explícitamente tokens asociados a cuentas no autorizadas u obsoletas (ej. 3613916216).
+ */
 export function getMercadoPagoAccessToken(): string | null {
   const candidateTokens = [
     process.env.MERCADOPAGO_ACCESS_TOKEN,
     process.env.MERCADO_PAGO_ACCESS_TOKEN,
-    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN,
     process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN,
-  ].filter(Boolean) as string[];
+    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN,
+  ].filter((t): t is string => {
+    if (!t) return false;
+    // Bloquear explícitamente tokens de la cuenta obsoleta 3613916216
+    if (t.includes("3613916216")) return false;
+    return true;
+  });
 
   // Priorizar token correspondiente a la aplicación oficial autorizada (4543074824173101)
   const officialToken = candidateTokens.find((t) => t.includes("4543074824173101"));

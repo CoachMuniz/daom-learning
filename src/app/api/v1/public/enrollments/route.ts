@@ -12,6 +12,7 @@ import {
   calculateOnDemandPrice,
   getPaymentGatewayForMarket,
 } from "@/lib/commercial/rules";
+import { getMercadoPagoAccessToken } from "@/lib/payments/mercadopago";
 import type { ModalityId } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -166,11 +167,7 @@ export async function POST(request: Request) {
     let mercadopagoInitPoint: string | null = null;
     let mercadopagoSandboxInitPoint: string | null = null;
 
-    const mpToken =
-      process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN ||
-      process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN ||
-      process.env.MERCADOPAGO_ACCESS_TOKEN ||
-      process.env.MERCADO_PAGO_ACCESS_TOKEN;
+    const mpToken = getMercadoPagoAccessToken();
 
     if (provider === "mercadopago" && mpToken && enrollment.amount_total > 0) {
       try {

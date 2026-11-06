@@ -380,4 +380,129 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
     expect(data.sandbox_init_point).toBeTruthy();
     expect(data.init_point).toBeTruthy();
   });
+  it("8. Manejo de pago pendiente / en proceso: mantiene inscripción en 'pendiente_pago' sin otorgar materiales", async () => {
+    const enrPending = await createEnrollment({
+      userId: testUserId,
+      capacitacionId: canaryTrainingId,
+      ofertaId,
+      modalityId: "streaming",
+      currency: "ARS",
+      amountTotal: 35000,
+      paymentMethod: "mercadopago",
+    });
+
+    const pendingPaymentId = Math.floor(10000000 + Math.random() * 90000000);
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: pendingPaymentId,
+        status: "in_process",
+        status_detail: "pending_contingency",
+        external_reference: enrPending.id,
+        transaction_amount: 35000,
+        currency_id: "ARS",
+        payer: { email: "brenda.daom@daom.ar" },
+      }),
+    } as any);
+
+    const pendingResult = await verifyAndProcessEnrollmentPayment({
+      paymentId: pendingPaymentId,
+      expectedEnrollmentId: enrPending.id,
+    });
+
+    expect(pendingResult.success).toBe(true);
+    expect(pendingResult.status).toBe("in_process");
+
+    const enrAfterPending = await getEnrollmentById(enrPending.id);
+    expect(enrAfterPending?.status).toBe("pendiente_pago");
+
+    fetchSpy.mockRestore();
+  });
+
+  it("9. Reintento de acreditación: procesa exitosamente un pago que previamente estuvo pendiente", async () => {
+    const enrRetrySuccess = await createEnrollment({
+      userId: testUserId,
+      capacitacionId: canaryTrainingId,
+      ofertaId,
+      modalityId: "presencial",
+      currency: "ARS",
+      amountTotal: 45000,
+      paymentMethod: "mercadopago",
+    });
+
+    const retryPaymentId = Math.floor(10000000 + Math.random() * 90000000);
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    // Intento 1: estado pending
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: retryPaymentId,
+        status: "pending",
+        status_detail: "pending_review_manual",
+        external_reference: enrRetrySuccess.id,
+        transaction_amount: 45000,
+        currency_id: "ARS",
+        payer: { email: "brenda.daom@daom.ar" },
+      }),
+    } as any);
+
+    const res1 = await verifyAndProcessEnrollmentPayment({
+      paymentId: retryPaymentId,
+      expectedEnrollmentId: enrRetrySuccess.id,
+    });
+    expect(res1.status).toBe("pending");
+    let enrState = await getEnrollmentById(enrRetrySuccess.id);
+    expect(enrState?.status).toBe("pendiente_pago");
+
+    // Intento 2: reintento de verificación cuando el pago se aprueba definitivamente
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: retryPaymentId,
+        status: "approved",
+        status_detail: "accredited",
+        external_reference: enrRetrySuccess.id,
+        transaction_amount: 45000,
+        currency_id: "ARS",
+        date_approved: new Date().toISOString(),
+        payer: { email: "brenda.daom@daom.ar" },
+      }),
+    } as any);
+
+    const res2 = await verifyAndProcessEnrollmentPayment({
+      paymentId: retryPaymentId,
+      expectedEnrollmentId: enrRetrySuccess.id,
+    });
+    expect(res2.status).toBe("approved");
+    expect(res2.success).toBe(true);
+
+    enrState = await getEnrollmentById(enrRetrySuccess.id);
+    expect(enrState?.status).toBe("confirmada");
+    expect(enrState?.amount_paid).toBe(45000);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("10. Neutralización de cuenta obsoleta: descarta token asociado a la cuenta 3613916216", () => {
+    // Simular que en process.env existe el token de la cuenta obsoleta 3613916216
+    const savedToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
+    const savedOldToken = process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN;
+
+    delete process.env.MERCADOPAGO_ACCESS_TOKEN;
+    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN = "APP_USR-6811690768131868-081414-99999999-3613916216";
+
+    // Debe descartarlo y retornar null
+    const token = getMercadoPagoAccessToken();
+    expect(token).toBeNull();
+
+    // Restaurar
+    process.env.MERCADOPAGO_ACCESS_TOKEN = savedToken;
+    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN = savedOldToken;
+  });
 });
