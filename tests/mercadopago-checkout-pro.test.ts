@@ -74,14 +74,16 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
 
   it("1. Recupera el token oficial de Mercado Pago (soporta APP_USR- y TEST- según normativa Nov 2025)", () => {
     // 1a. Credencial de prueba moderna (cuenta vendedora generada para la app con prefijo APP_USR-)
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "APP_USR-1044877645171044-110607-9b564e3c33a9e7de54ea2ce33aa3ed5b-3691495044";
+    const mockModernToken = "APP_USR-1111111111111111-000000-mocktestsecretkey0000000000000000-3333333333";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = mockModernToken;
     const tokenModern = getMercadoPagoAccessToken();
-    expect(tokenModern).toBe("APP_USR-1044877645171044-110607-9b564e3c33a9e7de54ea2ce33aa3ed5b-3691495044");
+    expect(tokenModern).toBe(mockModernToken);
 
     // 1b. Credencial de prueba en formato legado TEST-
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-4543074824173101-091420-499ef4ff917f607f57a075c22dbdedba-1097736220";
+    const mockLegacyToken = "TEST-4543074824173101-091420-mocktestsecretkey0000000000000000-1097736220";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = mockLegacyToken;
     const tokenLegacy = getMercadoPagoAccessToken();
-    expect(tokenLegacy).toMatch(/^TEST-4543074824173101/);
+    expect(tokenLegacy).toBe(mockLegacyToken);
   });
 
   it("2. Valida la firma criptográfica HMAC-SHA256 con timestamp en milisegundos y cabecera x-request-id", () => {
@@ -334,10 +336,11 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
   });
 
   it("7. Conexión Real a Mercado Pago API: crea una preferencia Checkout Pro válida en Sandbox con la cuenta vendedora de prueba", async () => {
-    // Usar la credencial de prueba actual de la cuenta vendedora vinculada a la app 4543074824173101
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "APP_USR-1044877645171044-110607-9b564e3c33a9e7de54ea2ce33aa3ed5b-3691495044";
     const token = getMercadoPagoAccessToken();
-    expect(token).toBeTruthy();
+    if (!token || token.includes("mock") || token.includes("1111111111111111")) {
+      console.warn("MERCADOPAGO_ACCESS_TOKEN no inyectado en entorno. Omitiendo llamada externa en vivo.");
+      return;
+    }
 
     const res = await fetch("https://api.mercadopago.com/checkout/preferences", {
       method: "POST",
@@ -378,7 +381,7 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
     expect(res.ok).toBe(true);
     const data = await res.json();
     expect(data.id).toBeTruthy();
-    expect(data.collector_id).toBe(3691495044); // ID numérico de la cuenta vendedora de prueba oficial
+    expect(data.collector_id).toBeTruthy();
     expect(data.sandbox_init_point).toBeTruthy();
     expect(data.init_point).toBeTruthy();
   });
@@ -495,12 +498,14 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
     const savedToken = process.env.MERCADOPAGO_ACCESS_TOKEN;
 
     // Caso 1: Token de cuenta vendedora de prueba (APP_USR- según cambio Nov 2025)
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "APP_USR-1044877645171044-110607-9b564e3c33a9e7de54ea2ce33aa3ed5b-3691495044";
-    expect(getMercadoPagoAccessToken()).toBe("APP_USR-1044877645171044-110607-9b564e3c33a9e7de54ea2ce33aa3ed5b-3691495044");
+    const mockSellerToken = "APP_USR-1111111111111111-000000-mocktestsecretkey0000000000000000-3333333333";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = mockSellerToken;
+    expect(getMercadoPagoAccessToken()).toBe(mockSellerToken);
 
     // Caso 2: Token tradicional en formato TEST-
-    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-4543074824173101-091420-499ef4ff917f607f57a075c22dbdedba-1097736220";
-    expect(getMercadoPagoAccessToken()).toMatch(/^TEST-/);
+    const mockLegacyToken = "TEST-4543074824173101-091420-mocktestsecretkey0000000000000000-1097736220";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = mockLegacyToken;
+    expect(getMercadoPagoAccessToken()).toBe(mockLegacyToken);
 
     // Caso 3: Ausencia de variables
     delete process.env.MERCADOPAGO_ACCESS_TOKEN;
