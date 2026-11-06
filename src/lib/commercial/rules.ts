@@ -45,16 +45,20 @@ export interface EffectivePriceResult {
 
 /**
  * Retorna la pasarela oficial según el mercado del usuario.
+ * Decisión Comercial Definitiva: MERCADO PAGO es el proveedor único habilitado (nacional e internacional).
+ * Se conserva el tipo 'stripe' únicamente para compatibilidad con registros históricos existentes.
  */
-export function getPaymentGatewayForMarket(market: MarketType): "mercadopago" | "stripe" {
-  return market === "AR" ? "mercadopago" : "stripe";
+export function getPaymentGatewayForMarket(market?: MarketType): "mercadopago" | "stripe" {
+  return "mercadopago";
 }
 
 /**
  * Retorna la moneda oficial según el mercado.
+ * Decisión Comercial Definitiva: ARS (Pesos argentinos) para todas las operaciones y mercados.
+ * Se conserva 'USD' en el tipo de retorno únicamente para compatibilidad con registros históricos.
  */
-export function getCurrencyForMarket(market: MarketType): CurrencyType {
-  return market === "AR" ? "ARS" : "USD";
+export function getCurrencyForMarket(market?: MarketType): CurrencyType {
+  return "ARS";
 }
 
 /**

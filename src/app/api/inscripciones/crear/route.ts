@@ -47,17 +47,16 @@ export async function POST(request: Request) {
     }
 
     let amount = 0;
-    const currency = market === "AR" ? "ARS" : "USD";
+    const currency = "ARS";
 
-    // Si hay ofertaId, buscar precios de la oferta
+    // Si hay ofertaId, buscar precios de la oferta en ARS
     if (ofertaId) {
       const prices = await getPricesForEdition(ofertaId, false);
-      const matchedPrice = prices.find(
-        (p) =>
-          p.mercado === market ||
-          (market === "AR" && ((p.mercado as string) === "ARGENTINA" || p.moneda === "ARS")) ||
-          (market === "INT" && ((p.mercado as string) === "INTERNACIONAL" || p.moneda === "USD"))
-      );
+      const matchedPrice =
+        prices.find((p) => p.moneda === "ARS" && (p.mercado === market || (p.mercado as string) === "ARGENTINA")) ||
+        prices.find((p) => p.moneda === "ARS") ||
+        prices.find((p) => p.mercado === market) ||
+        prices[0];
       if (matchedPrice) {
         amount = Number(matchedPrice.precio_base);
       }
@@ -77,7 +76,7 @@ export async function POST(request: Request) {
       modalityId: modalityId as ModalityId,
       currency,
       amountTotal: amount,
-      paymentMethod: market === "AR" ? "mercadopago" : "stripe",
+      paymentMethod: "mercadopago",
       notes: notes || null,
     });
 

@@ -60,11 +60,11 @@ describe("Controles Editoriales y de Verificación Independientes", () => {
 });
 
 describe("Motor de Reglas Comerciales", () => {
-  it("mantiene independencia de monedas: ARS para AR (Mercado Pago), USD para INT (Stripe)", () => {
+  it("mantiene ARS y Mercado Pago como proveedor único para todos los mercados", () => {
     expect(getCurrencyForMarket("AR")).toBe("ARS");
-    expect(getCurrencyForMarket("INT")).toBe("USD");
+    expect(getCurrencyForMarket("INT")).toBe("ARS");
     expect(getPaymentGatewayForMarket("AR")).toBe("mercadopago");
-    expect(getPaymentGatewayForMarket("INT")).toBe("stripe");
+    expect(getPaymentGatewayForMarket("INT")).toBe("mercadopago");
   });
 
   it("calcula recargo de cambio de modalidad: 0% con >= 7 días, 25% con < 7 días", () => {

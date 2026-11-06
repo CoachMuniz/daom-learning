@@ -29,6 +29,10 @@ services:
         fromDatabase:
           name: daom-learning-db
           property: connectionString
+      - key: MERCADOPAGO_ACCESS_TOKEN
+        sync: false
+      - key: MERCADOPAGO_WEBHOOK_SECRET
+        sync: false
 
 databases:
   - name: daom-learning-db

@@ -9,6 +9,7 @@
  * - Acreditación automática y habilitación de materiales complementarios ZIP
  */
 
+import { getDatabase } from "@/lib/db/client";
 import {
   getEnrollmentById,
   recordPayment,
@@ -234,11 +235,90 @@ export async function verifyAndProcessEnrollmentPayment(options: {
       enrollment_id: enrollment.id,
       payment_id: paymentRecord.id,
     };
-  } else if (p.status === "rejected" || p.status === "cancelled") {
+  } else if (p.status === "refunded" || p.status === "charged_back") {
+    // 6b. Reembolso o contracargo: registrar reembolso, cambiar estado a 'reembolsada' y revocar accesos
+    const paymentRecord = await recordPayment({
+      enrollmentId: enrollment.id,
+      externalPaymentId: `MP-${p.id}-REFUND`,
+      provider: "mercadopago",
+      status: "refunded",
+      amount: p.transaction_amount,
+      currency: "ARS",
+      payerEmail: p.payer_email,
+      rawPayload: p.raw,
+    });
+
+    await updateEnrollmentStatus(
+      enrollment.id,
+      "reembolsada",
+      `Pago ${p.status} en Mercado Pago. Fondos restituidos al pagador.`
+    );
+
+    // Revocar accesos a materiales complementarios
+    const db = getDatabase();
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `UPDATE material_entitlements SET is_revoked = 1, revoked_at = ? WHERE enrollment_id = ?`,
+      [nowIso, enrollment.id]
+    );
+
+    await recordIntegrationEvent({
+      idempotencyKey,
+      eventType: "enrollment.status_updated",
+      source: "payment_gateway",
+      payload: { payment: p, enrollment_id: enrollment.id, action: "refund_processed" },
+      status: "processed",
+    });
+
+    return {
+      success: true,
+      status: p.status,
+      message: `Reembolso procesado correctamente. Inscripción actualizada a reembolsada y accesos revocados.`,
+      enrollment_id: enrollment.id,
+      payment_id: paymentRecord.id,
+    };
+  } else if (p.status === "rejected") {
+    // 6c. Pago rechazado: registrar intento fallido pero NO cancelar irreversiblemente la inscripción
+    // Permite al participante reintentar el pago con otra tarjeta o medio sin perder su registro
+    await recordPayment({
+      enrollmentId: enrollment.id,
+      externalPaymentId: `MP-${p.id}`,
+      provider: "mercadopago",
+      status: "rejected",
+      amount: p.transaction_amount,
+      currency: "ARS",
+      payerEmail: p.payer_email,
+      rawPayload: p.raw,
+    });
+
+    // Mantiene 'pendiente_pago' para reintento seguro
+    await updateEnrollmentStatus(
+      enrollment.id,
+      "pendiente_pago",
+      `Intento de pago rechazado en Mercado Pago (${p.status_detail || "sin detalle"}). Habilitado para reintento.`
+    );
+
+    await recordIntegrationEvent({
+      idempotencyKey,
+      eventType: "enrollment.status_updated",
+      source: "payment_gateway",
+      payload: { payment: p, enrollment_id: enrollment.id, retry_allowed: true },
+      status: "processed",
+    });
+
+    return {
+      success: true,
+      status: "rejected",
+      message: `Pago rechazado por Mercado Pago (${p.status_detail || "rechazo"}). Inscripción preservada para reintento.`,
+      enrollment_id: enrollment.id,
+      payment_id: `MP-${p.id}`,
+    };
+  } else if (p.status === "cancelled") {
+    // 6d. Cancelación definitiva (ej: preferencia expirada o cancelación voluntaria)
     await updateEnrollmentStatus(
       enrollment.id,
       "cancelada",
-      `Pago ${p.status} en Mercado Pago (${p.status_detail || "sin detalle"})`
+      `Preferencia o pago cancelado en Mercado Pago (${p.status_detail || "cancelado"})`
     );
 
     await recordIntegrationEvent({
@@ -249,20 +329,19 @@ export async function verifyAndProcessEnrollmentPayment(options: {
       status: "processed",
     });
 
-
     return {
       success: true,
-      status: p.status,
-      message: `Pago ${p.status} registrado correctamente.`,
+      status: "cancelled",
+      message: `Pago cancelado registrado correctamente.`,
       enrollment_id: enrollment.id,
       payment_id: `MP-${p.id}`,
     };
   } else {
-    // pending, in_process, etc.
+    // 6e. Estados intermedios: pending, in_process, in_mediation, authorized
     return {
       success: true,
       status: p.status,
-      message: `El pago se encuentra en estado '${p.status}'. No se modifica la inscripción.`,
+      message: `El pago se encuentra en estado '${p.status}'. La inscripción permanece pendiente hasta confirmación definitiva.`,
       enrollment_id: enrollment.id,
       payment_id: `MP-${p.id}`,
     };

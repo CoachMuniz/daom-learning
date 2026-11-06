@@ -73,10 +73,8 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
   });
 
   it("1. Recupera el token oficial de Mercado Pago para la aplicación autorizada 4543074824173101", () => {
-    process.env.MERCADOPAGO_ACCESS_TOKEN =
-      process.env.MERCADOPAGO_ACCESS_TOKEN ||
-      process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN ||
-      "TEST-4543074824173101-mock-token-1097736220";
+    process.env.MERCADOPAGO_ACCESS_TOKEN = "TEST-4543074824173101-091420-499ef4ff917f607f57a075c22dbdedba-1097736220";
+    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN = "TEST-4543074824173101-091420-499ef4ff917f607f57a075c22dbdedba-1097736220";
 
     const token = getMercadoPagoAccessToken();
     expect(token).toBeTruthy();
@@ -240,9 +238,9 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
     fetchSpy.mockRestore();
   });
 
-  it("6. Manejo de pagos rechazados/cancelados: actualiza estado a 'cancelada' sin otorgar materiales", async () => {
-    // Crear una nueva inscripción para prueba de rechazo
-    const enrCancel = await createEnrollment({
+  it("6. Manejo de pagos rechazados, cancelados y reembolsados", async () => {
+    // 6a. Prueba de pago rechazado: NO cancela irreversiblemente, mantiene 'pendiente_pago' para reintento
+    const enrRetry = await createEnrollment({
       userId: testUserId,
       capacitacionId: canaryTrainingId,
       ofertaId,
@@ -262,7 +260,7 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
         id: rejectedPaymentId,
         status: "rejected",
         status_detail: "cc_rejected_insufficient_amount",
-        external_reference: enrCancel.id,
+        external_reference: enrRetry.id,
         transaction_amount: 35000,
         currency_id: "ARS",
         payer: { email: "brenda.daom@daom.ar" },
@@ -271,14 +269,63 @@ describe("Mercado Pago Checkout Pro — Integración Oficial, Calidad y Segurida
 
     const rejectResult = await verifyAndProcessEnrollmentPayment({
       paymentId: rejectedPaymentId,
-      expectedEnrollmentId: enrCancel.id,
+      expectedEnrollmentId: enrRetry.id,
     });
 
     expect(rejectResult.success).toBe(true);
     expect(rejectResult.status).toBe("rejected");
 
-    const enrCancelled = await getEnrollmentById(enrCancel.id);
-    expect(enrCancelled?.status).toBe("cancelada");
+    const enrAfterReject = await getEnrollmentById(enrRetry.id);
+    expect(enrAfterReject?.status).toBe("pendiente_pago"); // Preservado para reintento
+
+    // 6b. Prueba de cancelación definitiva (preferencia expirada)
+    const cancelledPaymentId = Math.floor(10000000 + Math.random() * 90000000);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: cancelledPaymentId,
+        status: "cancelled",
+        status_detail: "expired",
+        external_reference: enrRetry.id,
+        transaction_amount: 35000,
+        currency_id: "ARS",
+      }),
+    } as any);
+
+    const cancelResult = await verifyAndProcessEnrollmentPayment({
+      paymentId: cancelledPaymentId,
+      expectedEnrollmentId: enrRetry.id,
+    });
+    expect(cancelResult.status).toBe("cancelled");
+
+    const enrAfterCancel = await getEnrollmentById(enrRetry.id);
+    expect(enrAfterCancel?.status).toBe("cancelada");
+
+    // 6c. Prueba de reembolso sobre la inscripción confirmada (testEnrollmentId)
+    const refundPaymentId = Math.floor(10000000 + Math.random() * 90000000);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: refundPaymentId,
+        status: "refunded",
+        status_detail: "refunded",
+        external_reference: testEnrollmentId,
+        transaction_amount: 45000,
+        currency_id: "ARS",
+        payer: { email: "brenda.daom@daom.ar" },
+      }),
+    } as any);
+
+    const refundResult = await verifyAndProcessEnrollmentPayment({
+      paymentId: refundPaymentId,
+      expectedEnrollmentId: testEnrollmentId,
+    });
+    expect(refundResult.status).toBe("refunded");
+
+    const enrRefunded = await getEnrollmentById(testEnrollmentId);
+    expect(enrRefunded?.status).toBe("reembolsada");
 
     fetchSpy.mockRestore();
   });

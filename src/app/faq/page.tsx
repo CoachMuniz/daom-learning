@@ -30,7 +30,7 @@ const defaultFaqs = [
     categoria: "Aranceles y Medios de Pago",
     pregunta: "¿Qué medios de pago están disponibles para Argentina y el exterior?",
     respuesta:
-      "Para residentes en Argentina los aranceles son en pesos argentinos (ARS) mediante Mercado Pago (transferencias, tarjetas de débito y crédito). Para participantes internacionales los aranceles son en dólares (USD) a través de Stripe. Los precios de ambos mercados son independientes.",
+      "Todos los aranceles se expresan y procesan exclusivamente en pesos argentinos (ARS) mediante Mercado Pago como pasarela de pago oficial única. Los participantes pueden abonar mediante los medios habilitados por Mercado Pago: transferencias, tarjetas de débito y crédito nacionales o internacionales aceptadas por la plataforma.",
   },
   {
     faq_id: "FAQ-CAM-1",

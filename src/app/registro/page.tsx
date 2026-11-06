@@ -172,7 +172,7 @@ function RegistroForm() {
             <option value="CO">Colombia</option>
             <option value="MX">México</option>
             <option value="ES">España</option>
-            <option value="OT">Otro País (Stripe / USD)</option>
+            <option value="OT">Otro País (Mercado Pago / ARS)</option>
           </select>
         </div>
 

@@ -74,17 +74,20 @@ export async function POST(request: Request) {
 
     // 3. Cálculo de precio en servidor (NUNCA confiar en lo enviado por el cliente)
     let amountTotal = 0;
-    const currency = market === "AR" ? "ARS" : "USD";
-    const provider = getPaymentGatewayForMarket(market);
+    const currency = "ARS"; // Decisión comercial definitiva: ARS como moneda única para todos los mercados
+    const provider = getPaymentGatewayForMarket(market); // Mercado Pago como único proveedor habilitado
 
     if (targetOfertaId) {
       const prices = await getPricesForEdition(targetOfertaId, true);
-      const matchedPrice = prices.find(
-        (p) =>
-          p.mercado === market ||
-          (market === "AR" && ((p.mercado as string) === "ARGENTINA" || p.moneda === "ARS")) ||
-          (market === "INT" && ((p.mercado as string) === "INTERNACIONAL" || p.moneda === "USD"))
-      );
+      const matchedPrice =
+        prices.find(
+          (p) =>
+            p.moneda === "ARS" &&
+            (p.mercado === market || (p.mercado as string) === "ARGENTINA")
+        ) ||
+        prices.find((p) => p.moneda === "ARS") ||
+        prices.find((p) => p.mercado === market) ||
+        prices[0];
 
       if (matchedPrice) {
         // Calcular precio efectivo con promociones vigentes
@@ -200,8 +203,11 @@ export async function POST(request: Request) {
               ...(participant.documentId
                 ? {
                     identification: {
-                      type: "DNI",
-                      number: participant.documentId.replace(/\D/g, "") || participant.documentId,
+                      type: participant.country && participant.country !== "AR" ? "OTRO" : "DNI",
+                      number:
+                        participant.country && participant.country !== "AR"
+                          ? participant.documentId.trim()
+                          : participant.documentId.replace(/\D/g, "") || participant.documentId,
                     },
                   }
                 : {}),
@@ -274,6 +280,7 @@ export async function POST(request: Request) {
         },
         canary: "DAOM-FORMACION-SHEET-01",
         canary_security: "DAOM-MERCADOPAGO-MCP-01",
+        canary_mp_only: "DAOM-LEARNING-MP-ONLY-01",
       },
       { status: existingEnrollment ? 200 : 201 }
     );

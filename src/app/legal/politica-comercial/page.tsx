@@ -27,17 +27,14 @@ export default function PoliticaComercialPage() {
 
       <div className="prose prose-slate max-w-none text-sm text-daom-neutral-700 leading-relaxed space-y-6">
         <section className="space-y-2">
-          <h2 className="text-lg font-bold text-daom-neutral-900">1. Estructura de Mercados y Monedas Independientes</h2>
+          <h2 className="text-lg font-bold text-daom-neutral-900">1. Moneda Oficial y Pasarela Exclusiva</h2>
           <p>
-            DAOM Learning opera con dos esquemas tarifarios no convertibles de forma automática:
+            DAOM Learning opera exclusivamente en Pesos Argentinos (ARS) mediante Mercado Pago como única pasarela autorizada:
           </p>
           <ul className="list-disc pl-5 space-y-1">
-            <li><strong>Mercado Argentino (AR):</strong> Valores fijados en Pesos Argentinos (ARS), canalizados mediante Mercado Pago.</li>
-            <li><strong>Mercado Internacional (INT):</strong> Valores fijados en Dólares Estadounidenses (USD), canalizados mediante Stripe.</li>
+            <li><strong>Moneda Única:</strong> Todos los aranceles, órdenes de pago y facturación se liquidan estrictamente en ARS.</li>
+            <li><strong>Pasarela Exclusiva:</strong> Mercado Pago Checkout Pro procesa todos los pagos nacionales e internacionales. Los participantes del exterior abonan en ARS mediante tarjetas internacionales aceptadas por la plataforma.</li>
           </ul>
-          <p className="text-xs text-daom-neutral-500 italic">
-            No se efectúa conversión automática de divisas; cada mercado cuenta con su precio base independiente.
-          </p>
         </section>
 
         <section className="space-y-2">

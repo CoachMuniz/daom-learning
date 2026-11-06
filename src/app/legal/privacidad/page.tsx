@@ -39,7 +39,7 @@ export default function PrivacidadPage() {
           <h2 className="text-lg font-bold text-daom-neutral-900">2. Seguridad de Pagos</h2>
           <p>
             No almacenamos números de tarjetas de crédito o débito ni claves bancarias en nuestros servidores. Las
-            transacciones son procesadas de extremo a extremo por pasarelas seguras certificadas (Mercado Pago y Stripe).
+            transacciones son procesadas de extremo a extremo por la pasarela segura certificada Mercado Pago (Checkout Pro).
           </p>
         </section>
 

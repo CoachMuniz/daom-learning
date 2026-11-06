@@ -96,8 +96,8 @@ function InscribirForm() {
                   : "border-daom-neutral-200 text-daom-neutral-700 hover:bg-daom-neutral-50"
               }`}
             >
-              <span className="block font-bold">Internacional (USD)</span>
-              <span className="text-[11px] text-daom-neutral-500">Stripe</span>
+              <span className="block font-bold">Internacional (ARS)</span>
+              <span className="text-[11px] text-daom-neutral-500">Mercado Pago (Tarjeta exterior)</span>
             </button>
           </div>
         </div>

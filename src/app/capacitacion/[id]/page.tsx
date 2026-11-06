@@ -280,13 +280,8 @@ export default async function TrainingDetailPage({ params }: TrainingDetailPageP
                     ${priceAr.precio_base.toLocaleString("es-AR")} <span className="text-sm font-semibold text-daom-neutral-500">ARS</span>
                   </p>
                   <p className="text-xs text-daom-neutral-500">
-                    Aboná mediante Mercado Pago (Argentina)
+                    Procesamiento oficial y seguro mediante Mercado Pago (ARS) para participantes nacionales e internacionales.
                   </p>
-                  {priceInt && (
-                    <p className="text-sm font-bold text-daom-neutral-700 pt-1">
-                      Exterior: ${priceInt.precio_base} USD (Stripe)
-                    </p>
-                  )}
                 </div>
               ) : (
                 <p className="text-sm font-medium text-daom-neutral-600">
