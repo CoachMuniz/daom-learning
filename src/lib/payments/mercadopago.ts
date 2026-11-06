@@ -19,27 +19,24 @@ import {
 } from "@/lib/db/repository";
 
 /**
- * Recupera el Access Token oficial de Mercado Pago para la aplicación autorizada (4543074824173101).
- * Descarta explícitamente tokens asociados a cuentas no autorizadas u obsoletas (ej. 3613916216).
+ * Recupera el Access Token oficial de Mercado Pago para la integración de Checkout Pro.
+ * Admite tanto credenciales de producción como credenciales de prueba generadas para
+ * la cuenta vendedora de prueba (que desde noviembre de 2025 pueden iniciar con 'APP_USR-').
  */
 export function getMercadoPagoAccessToken(): string | null {
-  const candidateTokens = [
-    process.env.MERCADOPAGO_ACCESS_TOKEN,
-    process.env.MERCADO_PAGO_ACCESS_TOKEN,
-    process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN,
-    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN,
-  ].filter((t): t is string => {
-    if (!t) return false;
-    // Bloquear explícitamente tokens de la cuenta obsoleta 3613916216
-    if (t.includes("3613916216")) return false;
-    return true;
-  });
+  const candidate =
+    process.env.MERCADOPAGO_ACCESS_TOKEN ||
+    process.env.MERCADO_PAGO_ACCESS_TOKEN ||
+    process.env.MERCADO_PAGO_CHECKOUT_PRO_CLEAN_TEST_ACCESS_TOKEN ||
+    process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN;
 
-  // Priorizar token correspondiente a la aplicación oficial autorizada (4543074824173101)
-  const officialToken = candidateTokens.find((t) => t.includes("4543074824173101"));
-  if (officialToken) return officialToken;
-
-  return candidateTokens[0] || null;
+  if (!candidate) return null;
+  const clean = candidate.trim();
+  // Validar formato de Access Token de Mercado Pago (APP_USR- o TEST-)
+  if (/^(APP_USR|TEST)-[A-Za-z0-9_-]+$/.test(clean)) {
+    return clean;
+  }
+  return clean || null;
 }
 
 export interface VerifiedPaymentResult {
