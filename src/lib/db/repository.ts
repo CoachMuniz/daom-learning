@@ -933,3 +933,35 @@ export async function recordIntegrationEvent(event: {
     created_at: nowIso,
   };
 }
+
+
+export async function listIntegrationEvents(options?: {
+  limit?: number;
+  eventType?: string;
+  status?: string;
+}): Promise<IntegrationEvent[]> {
+  const db = getDatabase();
+  const limit = Math.min(options?.limit || 50, 200);
+
+  let query = `SELECT * FROM integration_events`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  if (options?.eventType) {
+    conditions.push(`event_type = ?`);
+    params.push(options.eventType);
+  }
+  if (options?.status) {
+    conditions.push(`status = ?`);
+    params.push(options.status);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(" AND ");
+  }
+
+  query += ` ORDER BY created_at DESC LIMIT ?`;
+  params.push(limit);
+
+  return await db.query<IntegrationEvent>(query, params);
+}

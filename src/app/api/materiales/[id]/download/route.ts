@@ -4,6 +4,19 @@ import { verifyMaterialAccess, recordMaterialDownload } from "@/lib/db/repositor
 import fs from "node:fs";
 import path from "node:path";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * Endpoint de descarga segura de Material Didáctico Complementario (ZIP).
+ * Canario: DAOM-LEARNING-FINAL-01
+ *
+ * Principio de Entrega Real:
+ * 1. Verifica autenticación y autorización estricta (pago acreditado).
+ * 2. Si el archivo físico real no ha sido cargado aún por el equipo docente,
+ *    retorna un mensaje informativo HTTP 404 estructurado.
+ * 3. NUNCA genera ni sirve archivos ZIP vacíos ni documentos ficticios.
+ * 4. Registra cada descarga para auditoría de accesos.
+ */
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -14,7 +27,7 @@ export async function GET(
       {
         error: "UNAUTHENTICATED",
         message: "Debe iniciar sesión para descargar material complementario.",
-        canary: "DAOM-FORMACION-SHEET-01",
+        canary: "DAOM-LEARNING-FINAL-01",
       },
       { status: 401 }
     );
@@ -29,35 +42,37 @@ export async function GET(
         error: "FORBIDDEN",
         message:
           "Acceso denegado. No posee una inscripción confirmada con pago acreditado para este material complementario.",
-        canary: "DAOM-FORMACION-SHEET-01",
+        canary: "DAOM-LEARNING-FINAL-01",
       },
       { status: 403 }
     );
   }
 
-  // Registrar descarga en base de datos y auditoría
-  const ip = request.headers.get("x-forwarded-for") || "unknown";
-  await recordMaterialDownload(entitlement.id, ip);
-
-  // Servir el archivo ZIP protegido
+  // Resolver ubicación en almacenamiento local o volumen persistente
   const fileName = entitlement.asset?.file_name || `material-${assetId}.zip`;
   const storageDir = path.join(process.cwd(), "data", "materials");
   const filePath = path.join(storageDir, fileName);
 
-  // Asegurar que exista un archivo ZIP de muestra si aún no fue subido físicamente
+  // Si el archivo físico no existe en disco, informar transparentemente
   if (!fs.existsSync(filePath)) {
-    if (!fs.existsSync(storageDir)) {
-      fs.mkdirSync(storageDir, { recursive: true });
-    }
-    // Escribir un archivo ZIP canónico válido mínimo (encabezado PK\x03\x04 de ZIP estándar)
-    // PK\x05\x06 es el end of central directory de un zip vacío válido (22 bytes)
-    const emptyZip = Buffer.from([
-      0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00,
-    ]);
-    fs.writeFileSync(filePath, emptyZip);
+    return NextResponse.json(
+      {
+        error: "MATERIAL_PENDING_PUBLICATION",
+        message:
+          "El material didáctico complementario de esta capacitación está siendo preparado por el equipo docente de DAOM y estará disponible para su descarga en tu portal antes del inicio de la cursada.",
+        asset_id: assetId,
+        training_id: entitlement.asset?.capacitacion_id,
+        canary: "DAOM-LEARNING-FINAL-01",
+      },
+      { status: 404 }
+    );
   }
 
+  // Registrar descarga en base de datos y auditoría de accesos
+  const ip = request.headers.get("x-forwarded-for") || "unknown";
+  await recordMaterialDownload(entitlement.id, ip);
+
+  const fileStat = fs.statSync(filePath);
   const fileBuffer = fs.readFileSync(filePath);
 
   return new NextResponse(fileBuffer, {
@@ -65,8 +80,8 @@ export async function GET(
     headers: {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${fileName}"`,
-      "Content-Length": fileBuffer.length.toString(),
-      "X-Canary-Project": "DAOM-FORMACION-SHEET-01",
+      "Content-Length": fileStat.size.toString(),
+      "X-Canary-Project": "DAOM-LEARNING-FINAL-01",
       "Cache-Control": "private, no-cache, no-store, must-revalidate",
     },
   });

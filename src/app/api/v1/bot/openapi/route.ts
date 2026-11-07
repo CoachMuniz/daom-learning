@@ -5,9 +5,9 @@ export async function GET() {
     openapi: "3.1.0",
     info: {
       title: "DAOM Learning — Bot Integration API",
-      version: "1.0.0",
+      version: "1.1.0",
       description:
-        "Contrato oficial de integración entre el bot de DAOM y la plataforma web de capacitaciones DAOM Learning. Canario: DAOM-FORMACION-SHEET-01.",
+        "Contrato oficial de integración entre el bot de DAOM y la plataforma web de capacitaciones DAOM Learning. Canario: DAOM-LEARNING-FINAL-01.",
       contact: {
         name: "DAOM Weightlifting — Formación & Tecnología",
         email: "capacitaciones@daom-weightlifting.com",
@@ -106,6 +106,31 @@ export async function GET() {
       },
     },
     paths: {
+      "/events": {
+        get: {
+          summary: "Consultar registro de eventos de integración del ecosistema",
+          operationId: "listIntegrationEvents",
+          parameters: [
+            { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
+            { name: "event_type", in: "query", schema: { type: "string" } },
+            { name: "status", in: "query", schema: { type: "string" } },
+          ],
+          responses: {
+            "200": { description: "Lista de eventos de integración" },
+            "401": { description: "No autorizado" },
+          },
+        },
+        post: {
+          summary: "Registrar evento de integración de forma idempotente",
+          operationId: "recordIntegrationEvent",
+          responses: {
+            "201": { description: "Evento registrado" },
+            "200": { description: "Evento ya registrado (idempotente)" },
+            "400": { description: "Parámetros inválidos" },
+            "401": { description: "No autorizado" },
+          },
+        },
+      },
       "/payments/confirm": {
         post: {
           summary: "Confirmar pago y habilitar de inmediato el material ZIP",
@@ -204,7 +229,7 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "X-Canary-Project": "DAOM-FORMACION-SHEET-01",
+      "X-Canary-Project": "DAOM-LEARNING-FINAL-01",
     },
   });
 }

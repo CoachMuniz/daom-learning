@@ -75,6 +75,15 @@ export interface TrainingEdition {
   verificacion: VerificationStatus;
   synced_at: string;
   precios?: Price[];
+  streaming_platform?: string | null;
+  streaming_url?: string | null;
+  streaming_password?: string | null;
+  streaming_instructions?: string | null;
+  vimeo_video_id?: string | null;
+  vimeo_url?: string | null;
+  recording_available_at?: string | null;
+  recording_status?: "pending" | "available" | "expired" | string | null;
+  whatsapp_group_url?: string | null;
 }
 
 export interface Price {
@@ -140,6 +149,8 @@ export interface Enrollment {
   modality_change_to?: ModalityId | null;
   modality_change_fee: number;
   modality_change_status?: "ninguno" | "pendiente_aprobacion" | "aprobado" | "rechazado";
+  revocation_status?: string | null;
+  qr_token?: string | null;
   created_at: string;
   updated_at: string;
   training?: Training;
@@ -218,15 +229,21 @@ export interface IntegrationEvent {
   id: string;
   idempotency_key: string;
   event_type:
+    | "enrollment.created"
+    | "payment.approved"
     | "payment.confirmed"
+    | "payment.refunded"
     | "enrollment.status_updated"
     | "materials.authorized"
     | "attendance.recorded"
+    | "attendance.confirmed"
     | "certificate.linked"
-    | "modality_change.requested";
-  source: "bot" | "payment_gateway" | "admin_manual";
+    | "certificate.ready"
+    | "modality_change.requested"
+    | "recording.available";
+  source: "bot" | "payment_gateway" | "admin_manual" | "system";
   payload: string;
-  status: "processed" | "failed" | "ignored";
+  status: "processed" | "failed" | "ignored" | "pending";
   error_message?: string | null;
   processed_at: string;
   created_at: string;

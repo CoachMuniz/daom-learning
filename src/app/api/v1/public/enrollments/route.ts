@@ -73,6 +73,57 @@ export async function POST(request: Request) {
 
     const targetOfertaId = edition?.oferta_id || ofertaId || null;
 
+    // 2.1 Validación estricta de cupos y estado comercial de la edición
+    if (edition) {
+      if (edition.estado_comercial === "agotada" || edition.estado_comercial === "cerrada") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "CUPO_AGOTADO",
+            message: "Los cupos para esta edición se encuentran completos o la inscripción ha cerrado.",
+            canary: "DAOM-LEARNING-FINAL-01",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (edition.estado_comercial === "proximamente" && edition.cupo_presencial === 0 && edition.cupo_streaming === 0 && modalityId !== "on_demand") {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "CUPO_PENDIENTE_CONFIGURACION",
+            message: "Las vacantes para esta edición aún se encuentran en fase de configuración técnica y validación docente.",
+            canary: "DAOM-LEARNING-FINAL-01",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (modalityId === "presencial" && edition.cupo_presencial > 0 && edition.cupos_ocupados_presencial >= edition.cupo_presencial) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "CUPO_PRESENCIAL_AGOTADO",
+            message: "El cupo presencial en tarima para esta edición se encuentra agotado. Podés optar por Streaming o modalidad On-Demand.",
+            canary: "DAOM-LEARNING-FINAL-01",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (modalityId === "streaming" && edition.cupo_streaming > 0 && edition.cupos_ocupados_streaming >= edition.cupo_streaming) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "CUPO_STREAMING_AGOTADO",
+            message: "El cupo de streaming en vivo para esta edición se encuentra agotado. Podés optar por modalidad On-Demand.",
+            canary: "DAOM-LEARNING-FINAL-01",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     // 3. Cálculo de precio en servidor (NUNCA confiar en lo enviado por el cliente)
     let amountTotal = 0;
     const currency = "ARS"; // Decisión comercial definitiva: ARS como moneda única para todos los mercados
