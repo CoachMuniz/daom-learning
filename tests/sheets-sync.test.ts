@@ -71,17 +71,27 @@ describe("Motor de Reglas Comerciales", () => {
     const basePrice = 100000;
     const refDate = new Date("2026-11-01T10:00:00-03:00");
 
-    // Evento a 10 días de distancia: sin recargo
-    const freeChange = calculateModalityChangeFee(basePrice, "2026-11-11", refDate);
+    // Evento a 10 días de distancia: sin recargo (Presencial -> Streaming)
+    const freeChange = calculateModalityChangeFee(basePrice, "2026-11-11", refDate, "presencial", "streaming");
     expect(freeChange.surchargePercentage).toBe(0);
     expect(freeChange.surchargeAmount).toBe(0);
     expect(freeChange.totalWithFee).toBe(100000);
+    expect(freeChange.requiresApproval).toBe(false);
 
-    // Evento a 3 días de distancia: 25% de recargo
-    const lateChange = calculateModalityChangeFee(basePrice, "2026-11-04", refDate);
+    // Evento a 3 días de distancia: 25% de recargo (Presencial -> Streaming)
+    const lateChange = calculateModalityChangeFee(basePrice, "2026-11-04", refDate, "presencial", "streaming");
     expect(lateChange.surchargePercentage).toBe(25);
     expect(lateChange.surchargeAmount).toBe(25000);
     expect(lateChange.totalWithFee).toBe(125000);
+    expect(lateChange.requiresApproval).toBe(false);
+
+    // Regla H027-D: Cambio Streaming -> Presencial comparte arancel base (0% diferencia de precio)
+    const streamingToPresencial = calculateModalityChangeFee(basePrice, "2026-11-04", refDate, "streaming", "presencial");
+    expect(streamingToPresencial.surchargePercentage).toBe(0);
+    expect(streamingToPresencial.priceDifference).toBe(0);
+    expect(streamingToPresencial.totalWithFee).toBe(100000);
+    expect(streamingToPresencial.requiresApproval).toBe(true);
+    expect(streamingToPresencial.reason).toContain("Streaming y Presencial tienen el mismo precio base");
   });
 
   it("calcula recargo On Demand: precio base antes del evento, +35% desde el día del evento", () => {

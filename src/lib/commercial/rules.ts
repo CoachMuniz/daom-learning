@@ -2,16 +2,21 @@
  * DAOM Learning — Motor de Reglas Comerciales
  * Canario: DAOM-FORMACION-SHEET-01
  *
- * Implementa las reglas comerciales estrictas:
+ * Implementa las reglas comerciales estrictas (H027-D):
  * 1. Monedas independientes (ARS para AR, USD para INT). No auto-conversión.
  * 2. Mismo precio base para Presencial y Streaming.
  * 3. Cambio de modalidad:
- *    - >= 7 días antes del inicio: 0% recargo.
- *    - < 7 días antes del inicio: 25% de recargo sobre precio base.
+ *    - Presencial -> Streaming:
+ *        * >= 7 días antes del inicio: 0% recargo.
+ *        * < 7 días antes del inicio: 25% de recargo sobre precio base.
+ *    - Streaming -> Presencial:
+ *        * 0% diferencia automática de precio (mismo precio base).
+ *        * Sujeto a disponibilidad de cupos en sede y autorización administrativa.
+ *    - Evento iniciado o pasado: no elegible.
  * 4. On Demand:
- *    - Compra antes de la fecha del evento: precio base.
- *    - Compra el día del evento o posterior: +35% de recargo.
- * 5. On Demand no acredita asistencia presencial ni streaming en vivo.
+ *    - Compra antes de la fecha del evento: precio base (igual a Streaming).
+ *    - Compra el día del evento o posterior: +35% de recargo sobre precio base.
+ * 5. On Demand no acredita asistencia presencial ni streaming en vivo ni emite certificado de asistencia.
  */
 
 import type { ModalityId, MarketType, CurrencyType, Price } from "@/lib/types";
@@ -22,6 +27,8 @@ export interface ModalityChangeFeeResult {
   surchargePercentage: number;
   surchargeAmount: number;
   totalWithFee: number;
+  priceDifference: number;
+  requiresApproval: boolean;
   reason: string;
 }
 
@@ -75,26 +82,67 @@ export function getDaysUntilEvent(eventStartDateIso: string, referenceDate: Date
 
 /**
  * Calcula el recargo aplicable a una solicitud de cambio de modalidad.
- * - >= 7 días: sin recargo (0%).
- * - < 7 días: 25% de recargo.
+ * Reglas comerciales oficiales (H027-D):
+ * 1. Presencial y Streaming comparten exactamente el mismo precio base.
+ * 2. Cambio Presencial -> Streaming:
+ *    - >= 7 días: sin recargo (0%).
+ *    - < 7 días: 25% de recargo sobre el precio base.
+ * 3. Cambio Streaming -> Presencial:
+ *    - 0% diferencia automática de precio (mismo precio base).
+ *    - Sujeto a disponibilidad de cupos presenciales y autorización administrativa en sede.
+ * 4. Evento iniciado o pasado: no elegible.
  */
 export function calculateModalityChangeFee(
   basePrice: number,
   eventStartDateIso?: string | null,
-  referenceDate: Date = new Date()
+  referenceDate: Date = new Date(),
+  fromModality: string = "presencial",
+  toModality: string = "streaming"
 ): ModalityChangeFeeResult {
+  const normFrom = (fromModality || "").toLowerCase().replace(/[-_]/g, "");
+  const normTo = (toModality || "").toLowerCase().replace(/[-_]/g, "");
+
+  // Caso: Streaming -> Presencial (Mismo precio base, 0% diferencia de precio, sujeto a cupo físico en sede)
+  if (normFrom.includes("streaming") && normTo.includes("presencial")) {
+    return {
+      isEligible: true,
+      daysUntilEvent: eventStartDateIso ? getDaysUntilEvent(eventStartDateIso, referenceDate) : 999,
+      surchargePercentage: 0,
+      surchargeAmount: 0,
+      priceDifference: 0,
+      totalWithFee: basePrice,
+      requiresApproval: true,
+      reason: "Streaming y Presencial tienen el mismo precio base (0% diferencia de precio). El cambio está sujeto a disponibilidad de cupo presencial en la sede y confirmación administrativa.",
+    };
+  }
+
   if (!eventStartDateIso) {
     return {
       isEligible: true,
       daysUntilEvent: 999,
       surchargePercentage: 0,
       surchargeAmount: 0,
+      priceDifference: 0,
       totalWithFee: basePrice,
+      requiresApproval: false,
       reason: "Sin fecha de inicio definida; no aplica recargo por cambio de modalidad.",
     };
   }
 
   const days = getDaysUntilEvent(eventStartDateIso, referenceDate);
+
+  if (days < 0) {
+    return {
+      isEligible: false,
+      daysUntilEvent: days,
+      surchargePercentage: 0,
+      surchargeAmount: 0,
+      priceDifference: 0,
+      totalWithFee: basePrice,
+      requiresApproval: false,
+      reason: "El evento ya ha iniciado o finalizado. No se admiten cambios de modalidad posteriores a la fecha de inicio.",
+    };
+  }
 
   if (days >= 7) {
     return {
@@ -102,7 +150,9 @@ export function calculateModalityChangeFee(
       daysUntilEvent: days,
       surchargePercentage: 0,
       surchargeAmount: 0,
+      priceDifference: 0,
       totalWithFee: basePrice,
+      requiresApproval: false,
       reason: `Solicitud realizada con ${days} días de antelación (mínimo 7 días requerido para 0% recargo).`,
     };
   }
@@ -115,7 +165,9 @@ export function calculateModalityChangeFee(
     daysUntilEvent: days,
     surchargePercentage: surchargePct,
     surchargeAmount: surchargeAmt,
+    priceDifference: 0,
     totalWithFee: basePrice + surchargeAmt,
+    requiresApproval: false,
     reason: `Solicitud realizada a ${days} días del evento (menos de 7 días). Aplica recargo reglamentario del 25%.`,
   };
 }
