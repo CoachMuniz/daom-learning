@@ -154,6 +154,18 @@ export async function POST(request: Request) {
       amountTotal = onDemandCalc.finalPrice;
     }
 
+    // 3.1 Validación estricta de precio comercial válido (H028)
+    if (!amountTotal || amountTotal <= 0 || isNaN(amountTotal)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "INVALID_EDITION_PRICE",
+          message: "La edición seleccionada no posee un arancel comercial configurado o válido en el catálogo oficial.",
+        },
+        { status: 422 }
+      );
+    }
+
     // 4. Crear o vincular participante seguro (sin exigir contraseña obligatoria)
     const user = await findOrCreateParticipant({
       email: participant.email,

@@ -69,6 +69,18 @@ export async function POST(request: Request) {
       amount = onDemandCalc.finalPrice;
     }
 
+    // Validación estricta de precio comercial válido (H028)
+    if (!amount || amount <= 0 || isNaN(amount)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "INVALID_EDITION_PRICE",
+          message: "La edición seleccionada no posee un arancel comercial configurado o válido en el catálogo oficial.",
+        },
+        { status: 422 }
+      );
+    }
+
     const enrollment = await createEnrollment({
       userId: session.userId,
       capacitacionId,

@@ -1,22 +1,33 @@
 /**
  * DAOM Learning — Motor de Reglas Comerciales
- * Canario: DAOM-FORMACION-SHEET-01
+ * Canario: DAOM-LEARNING-H028-COMPLETE
  *
- * Implementa las reglas comerciales estrictas (H027-D):
- * 1. Monedas independientes (ARS para AR, USD para INT). No auto-conversión.
- * 2. Mismo precio base para Presencial y Streaming.
- * 3. Cambio de modalidad:
+ * Implementa las reglas comerciales estrictas (H028):
+ * 1. Moneda ARS para liquidación definitiva y Mercado Pago como pasarela única.
+ * 2. PRECIOS DINÁMICOS POR EDICIÓN:
+ *    - Cada capacitación y edición posee su propio precio base configurado en la fuente de datos autorizada (Google Sheets).
+ *    - No existe ningún precio universal o fijo codificado en el sistema.
+ * 3. Paridad Presencial / Streaming:
+ *    - La modalidad Streaming en Vivo comparte exactamente el mismo precio base que la modalidad Presencial de dicha edición.
+ * 4. Modalidad On-Demand:
+ *    - Compra anticipada (antes de la fecha del evento): mismo precio base de la edición.
+ *    - Compra el día del evento o con posterioridad: recargo del 35% (+35%) sobre el precio base de la edición.
+ *    - On-Demand no acredita asistencia presencial ni sincrónica ni emite certificado de asistencia.
+ * 5. Cambios voluntarios de modalidad:
  *    - Presencial -> Streaming:
- *        * >= 7 días antes del inicio: 0% recargo.
- *        * < 7 días antes del inicio: 25% de recargo sobre precio base.
+ *        * >= 7 días corridos antes del evento: sin recargo (0%).
+ *        * < 7 días corridos: recargo administrativo del 25% sobre el precio base.
  *    - Streaming -> Presencial:
- *        * 0% diferencia automática de precio (mismo precio base).
- *        * Sujeto a disponibilidad de cupos en sede y autorización administrativa.
- *    - Evento iniciado o pasado: no elegible.
- * 4. On Demand:
- *    - Compra antes de la fecha del evento: precio base (igual a Streaming).
- *    - Compra el día del evento o posterior: +35% de recargo sobre precio base.
- * 5. On Demand no acredita asistencia presencial ni streaming en vivo ni emite certificado de asistencia.
+ *        * 0% de diferencia automática de precio base (comparten arancel).
+ *        * Sujeto a disponibilidad de cupo en la tarima olímpica de la sede y autorización administrativa previa.
+ *    - Posterior al inicio: Las autogestiones voluntarias no aplican una vez iniciada la cursada,
+ *      sin perjuicio de los derechos irrenunciables del consumidor (Ley 24.240 y CCCN Art. 1110)
+ *      ni de solicitudes fundadas sujetas a revisión administrativa especial.
+ * 6. Protección legal al consumidor:
+ *    - Todas las limitaciones comerciales operan sin perjuicio de las disposiciones de orden público
+ *      de la Ley 24.240 de Defensa del Consumidor y el Código Civil y Comercial de la Nación.
+ *    - El derecho de revocación y arrepentimiento puede registrarse formalmente en todo momento para su
+ *      debido análisis administrativo y nunca genera reintegros automáticos no supervisados.
  */
 
 import type { ModalityId, MarketType, CurrencyType, Price } from "@/lib/types";
@@ -30,6 +41,7 @@ export interface ModalityChangeFeeResult {
   priceDifference: number;
   requiresApproval: boolean;
   reason: string;
+  legalNotice: string;
 }
 
 export interface OnDemandPricingResult {
@@ -49,6 +61,18 @@ export interface EffectivePriceResult {
   promoValue?: number | null;
   promoDescription?: string | null;
 }
+
+export interface RevocationEvaluationResult {
+  isWithinStatutoryPeriod: boolean;
+  daysSincePurchase: number;
+  status: "pending_review" | "in_review" | "requires_manual_evaluation";
+  exceptionApplies: boolean;
+  message: string;
+  legalBasis: string;
+}
+
+const LEGAL_NOTICE_STANDARD =
+  "Las condiciones comerciales rigen para cambios voluntarios de modalidad y cancelaciones comerciales sin perjuicio de los derechos irrenunciables del consumidor consagrados en la Ley N° 24.240 y el Código Civil y Comercial de la Nación.";
 
 /**
  * Retorna la pasarela oficial según el mercado del usuario.
@@ -73,7 +97,7 @@ export function getCurrencyForMarket(market?: MarketType): CurrencyType {
  * en la zona horaria 'America/Argentina/Buenos_Aires'.
  */
 export function getDaysUntilEvent(eventStartDateIso: string, referenceDate: Date = new Date()): number {
-  const eventDate = new Date(eventStartDateIso + "T00:00:00-03:00");
+  const eventDate = new Date(eventStartDateIso.split("T")[0] + "T00:00:00-03:00");
   const refTime = referenceDate.getTime();
   const eventTime = eventDate.getTime();
   const diffMs = eventTime - refTime;
@@ -81,16 +105,8 @@ export function getDaysUntilEvent(eventStartDateIso: string, referenceDate: Date
 }
 
 /**
- * Calcula el recargo aplicable a una solicitud de cambio de modalidad.
- * Reglas comerciales oficiales (H027-D):
- * 1. Presencial y Streaming comparten exactamente el mismo precio base.
- * 2. Cambio Presencial -> Streaming:
- *    - >= 7 días: sin recargo (0%).
- *    - < 7 días: 25% de recargo sobre el precio base.
- * 3. Cambio Streaming -> Presencial:
- *    - 0% diferencia automática de precio (mismo precio base).
- *    - Sujeto a disponibilidad de cupos presenciales y autorización administrativa en sede.
- * 4. Evento iniciado o pasado: no elegible.
+ * Calcula el arancel aplicable a una solicitud voluntaria de cambio de modalidad (H028).
+ * Opera con el precio base dinámico de la edición seleccionada.
  */
 export function calculateModalityChangeFee(
   basePrice: number,
@@ -112,7 +128,8 @@ export function calculateModalityChangeFee(
       priceDifference: 0,
       totalWithFee: basePrice,
       requiresApproval: true,
-      reason: "Streaming y Presencial tienen el mismo precio base (0% diferencia de precio). El cambio está sujeto a disponibilidad de cupo presencial en la sede y confirmación administrativa.",
+      reason: "Streaming y Presencial tienen el mismo precio base (0% diferencia de precio). El cambio está sujeto a disponibilidad de cupo presencial en la sede del Club DAOM y confirmación administrativa previa.",
+      legalNotice: LEGAL_NOTICE_STANDARD,
     };
   }
 
@@ -126,6 +143,7 @@ export function calculateModalityChangeFee(
       totalWithFee: basePrice,
       requiresApproval: false,
       reason: "Sin fecha de inicio definida; no aplica recargo por cambio de modalidad.",
+      legalNotice: LEGAL_NOTICE_STANDARD,
     };
   }
 
@@ -140,7 +158,8 @@ export function calculateModalityChangeFee(
       priceDifference: 0,
       totalWithFee: basePrice,
       requiresApproval: false,
-      reason: "El evento ya ha iniciado o finalizado. No se admiten cambios de modalidad posteriores a la fecha de inicio.",
+      reason: "El evento ya ha iniciado o finalizado. La política de cambios voluntarios no admite autogestión una vez iniciada la cursada, sin perjuicio de los derechos irrenunciables del consumidor (Ley 24.240 y CCCN) ni de solicitudes fundadas sujetas a revisión administrativa especial.",
+      legalNotice: LEGAL_NOTICE_STANDARD,
     };
   }
 
@@ -154,10 +173,11 @@ export function calculateModalityChangeFee(
       totalWithFee: basePrice,
       requiresApproval: false,
       reason: `Solicitud realizada con ${days} días de antelación (mínimo 7 días requerido para 0% recargo).`,
+      legalNotice: LEGAL_NOTICE_STANDARD,
     };
   }
 
-  // Menos de 7 días: 25% de recargo
+  // Menos de 7 días: 25% de recargo sobre el precio base dinámico
   const surchargePct = 25;
   const surchargeAmt = Math.round(basePrice * 0.25 * 100) / 100;
   return {
@@ -166,52 +186,54 @@ export function calculateModalityChangeFee(
     surchargePercentage: surchargePct,
     surchargeAmount: surchargeAmt,
     priceDifference: 0,
-    totalWithFee: basePrice + surchargeAmt,
+    totalWithFee: Math.round((basePrice + surchargeAmt) * 100) / 100,
     requiresApproval: false,
-    reason: `Solicitud realizada a ${days} días del evento (menos de 7 días). Aplica recargo reglamentario del 25%.`,
+    reason: `Solicitud realizada a ${days} días del evento (menos de 7 días). Aplica recargo administrativo reglamentario del 25% sobre el precio base.`,
+    legalNotice: LEGAL_NOTICE_STANDARD,
   };
 }
 
 /**
- * Calcula el precio para On Demand según la fecha de compra:
- * - Antes del evento: precio base.
- * - El día del evento o después: +35% adicional.
+ * Calcula el precio dinámico para On Demand según la fecha de compra:
+ * - Antes del evento (preventa): precio base dinámico de la edición.
+ * - El día del evento o después: +35% adicional sobre el precio base dinámico.
  */
 export function calculateOnDemandPrice(
   basePrice: number,
   eventStartDateIso?: string | null,
   purchaseDate: Date = new Date()
 ): OnDemandPricingResult {
+  const safeBasePrice = Math.max(0, Number(basePrice) || 0);
+
   if (!eventStartDateIso) {
     return {
-      basePrice,
+      basePrice: safeBasePrice,
       surchargePercentage: 0,
       surchargeAmount: 0,
-      finalPrice: basePrice,
+      finalPrice: safeBasePrice,
       isLatePurchase: false,
     };
   }
 
   const days = getDaysUntilEvent(eventStartDateIso, purchaseDate);
 
-  // Si days <= 0, significa que la compra se efectúa el día del evento o posteriormente
   if (days <= 0) {
     const surchargePct = 35;
-    const surchargeAmt = Math.round(basePrice * 0.35 * 100) / 100;
+    const surchargeAmt = Math.round(safeBasePrice * 0.35 * 100) / 100;
     return {
-      basePrice,
+      basePrice: safeBasePrice,
       surchargePercentage: surchargePct,
       surchargeAmount: surchargeAmt,
-      finalPrice: basePrice + surchargeAmt,
+      finalPrice: Math.round((safeBasePrice + surchargeAmt) * 100) / 100,
       isLatePurchase: true,
     };
   }
 
   return {
-    basePrice,
+    basePrice: safeBasePrice,
     surchargePercentage: 0,
     surchargeAmount: 0,
-    finalPrice: basePrice,
+    finalPrice: safeBasePrice,
     isLatePurchase: false,
   };
 }
@@ -297,5 +319,56 @@ export function calculateEffectivePrice(
     promoType: price.promocion_tipo,
     promoValue: pVal,
     promoDescription: `Descuento ${price.promocion_tipo}: ${pVal}${pType.includes("porcentaje") || pType.includes("%") ? "%" : " " + price.moneda}`,
+  };
+}
+
+/**
+ * Evalúa el régimen legal de revocación y arrepentimiento conforme al marco de orden público
+ * (Ley 24.240 de Defensa del Consumidor Art. 34 y Código Civil y Comercial de la Nación Art. 1110 y 1116).
+ */
+export function evaluateRevocationRequest(params: {
+  purchaseDate: Date | string;
+  eventStartDateIso?: string | null;
+  serviceConsumed?: boolean;
+  currentDate?: Date;
+}): RevocationEvaluationResult {
+  const now = params.currentDate ? params.currentDate.getTime() : Date.now();
+  const pDate = new Date(params.purchaseDate);
+  const pTime = !isNaN(pDate.getTime()) ? pDate.getTime() : now;
+  const diffDays = Math.floor((now - pTime) / (1000 * 60 * 60 * 24));
+  const isWithinStatutoryPeriod = diffDays <= 10;
+
+  if (params.serviceConsumed) {
+    return {
+      isWithinStatutoryPeriod,
+      daysSincePurchase: diffDays,
+      status: "requires_manual_evaluation",
+      exceptionApplies: true,
+      message:
+        "La solicitud fue registrada y se encuentra sujeta a dictamen administrativo y legal conforme a la excepción de servicio plenamente ejecutado prevista en el Art. 1116 del Código Civil y Comercial de la Nación.",
+      legalBasis: "CCCN Art. 1116 y Ley 24.240 Art. 34",
+    };
+  }
+
+  if (isWithinStatutoryPeriod) {
+    return {
+      isWithinStatutoryPeriod: true,
+      daysSincePurchase: diffDays,
+      status: "pending_review",
+      exceptionApplies: false,
+      message:
+        "Solicitud de arrepentimiento ingresada dentro del plazo legal de 10 días corridos (Art. 34 Ley 24.240 y Art. 1110 CCCN). Se procesará la verificación administrativa y la instrucción de reversión en Mercado Pago.",
+      legalBasis: "Ley 24.240 Art. 34, CCCN Art. 1110 y Res. SCI 424/2020",
+    };
+  }
+
+  return {
+    isWithinStatutoryPeriod: false,
+    daysSincePurchase: diffDays,
+    status: "requires_manual_evaluation",
+    exceptionApplies: false,
+    message:
+      `Solicitud ingresada a los ${diffDays} días de la contratación (superado el plazo legal de 10 días corridos de arrepentimiento unilateral incausado). El reclamo queda registrado para evaluación de causales particulares por la coordinación administrativa.`,
+    legalBasis: "Ley 24.240 de Defensa del Consumidor",
   };
 }
