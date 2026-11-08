@@ -109,6 +109,16 @@ export interface Modality {
   permite_grabacion: number;
 }
 
+export interface UserAuthIdentity {
+  id: string;
+  user_id: string;
+  provider: "google" | "credentials" | string;
+  provider_subject: string;
+  provider_email: string;
+  created_at: string;
+  last_login_at: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -120,6 +130,7 @@ export interface User {
   created_at: string;
   updated_at: string;
   profile?: Profile;
+  identities?: UserAuthIdentity[];
 }
 
 export interface Profile {

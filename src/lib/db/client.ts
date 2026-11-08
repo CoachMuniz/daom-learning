@@ -159,6 +159,25 @@ class SqliteDatabase implements IDatabase {
     try {
       const check = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='trainings'").get();
       if (check) {
+        // Garantizar existencia de tablas nuevas agregadas en H031
+        const checkIdentities = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='user_auth_identities'").get();
+        if (!checkIdentities) {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS user_auth_identities (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              provider TEXT NOT NULL,
+              provider_subject TEXT NOT NULL,
+              provider_email TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              last_login_at TEXT NOT NULL,
+              UNIQUE(provider, provider_subject)
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_auth_identities_user_id ON user_auth_identities(user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_auth_identities_provider_subject ON user_auth_identities(provider, provider_subject);
+            CREATE INDEX IF NOT EXISTS idx_user_auth_identities_provider_email ON user_auth_identities(provider, provider_email);
+          `);
+        }
         this.schemaApplied = true;
         return;
       }

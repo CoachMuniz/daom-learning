@@ -18,14 +18,16 @@ export async function createSession(user: {
     fullName: user.full_name,
   });
 
-  const cookieStore = cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 días
-  });
+  try {
+    const cookieStore = cookies();
+    cookieStore.set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // 7 días
+    });
+  } catch {}
 
   return token;
 }

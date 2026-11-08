@@ -13,6 +13,7 @@ import type {
   Price,
   User,
   Profile,
+  UserAuthIdentity,
   Enrollment,
   PaymentRecord,
   MaterialAsset,
@@ -307,6 +308,10 @@ export async function findUserByEmail(email: string): Promise<User | null> {
   if (!user) return null;
 
   user.profile = (await db.get<Profile>(`SELECT * FROM profiles WHERE user_id = ?`, [user.id])) ?? undefined;
+  user.identities = await db.query<UserAuthIdentity>(
+    `SELECT * FROM user_auth_identities WHERE user_id = ? ORDER BY created_at ASC`,
+    [user.id]
+  );
   return user;
 }
 
@@ -316,27 +321,123 @@ export async function findUserById(id: string): Promise<User | null> {
   if (!user) return null;
 
   user.profile = (await db.get<Profile>(`SELECT * FROM profiles WHERE user_id = ?`, [user.id])) ?? undefined;
+  user.identities = await db.query<UserAuthIdentity>(
+    `SELECT * FROM user_auth_identities WHERE user_id = ? ORDER BY created_at ASC`,
+    [user.id]
+  );
   return user;
+}
+
+export async function findIdentityByProvider(
+  provider: string,
+  providerSubject: string
+): Promise<UserAuthIdentity | null> {
+  const db = getDatabase();
+  return await db.get<UserAuthIdentity>(
+    `SELECT * FROM user_auth_identities WHERE provider = ? AND provider_subject = ?`,
+    [provider, providerSubject]
+  );
+}
+
+export async function findIdentitiesByUserId(userId: string): Promise<UserAuthIdentity[]> {
+  const db = getDatabase();
+  return await db.query<UserAuthIdentity>(
+    `SELECT * FROM user_auth_identities WHERE user_id = ? ORDER BY created_at ASC`,
+    [userId]
+  );
+}
+
+export async function findUserByIdentity(
+  provider: string,
+  providerSubject: string
+): Promise<User | null> {
+  const identity = await findIdentityByProvider(provider, providerSubject);
+  if (!identity) return null;
+  return await findUserById(identity.user_id);
+}
+
+export async function linkUserIdentity(data: {
+  userId: string;
+  provider: string;
+  providerSubject: string;
+  providerEmail: string;
+}): Promise<UserAuthIdentity> {
+  const db = getDatabase();
+  const existing = await findIdentityByProvider(data.provider, data.providerSubject);
+  const nowIso = new Date().toISOString();
+
+  if (existing) {
+    if (existing.user_id !== data.userId) {
+      throw new Error("Esta cuenta externa ya está vinculada a otro perfil institucional.");
+    }
+    await db.run(
+      `UPDATE user_auth_identities SET last_login_at = ?, provider_email = ? WHERE id = ?`,
+      [nowIso, data.providerEmail.toLowerCase().trim(), existing.id]
+    );
+    return { ...existing, last_login_at: nowIso, provider_email: data.providerEmail };
+  }
+
+  const identityId = `IDN-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+  await db.run(
+    `INSERT INTO user_auth_identities (id, user_id, provider, provider_subject, provider_email, created_at, last_login_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      identityId,
+      data.userId,
+      data.provider,
+      data.providerSubject,
+      data.providerEmail.toLowerCase().trim(),
+      nowIso,
+      nowIso,
+    ]
+  );
+
+  const created = await db.get<UserAuthIdentity>(
+    `SELECT * FROM user_auth_identities WHERE id = ?`,
+    [identityId]
+  );
+  if (!created) throw new Error("Error al recuperar la identidad creada");
+  return created;
+}
+
+export async function touchUserIdentityLogin(id: string): Promise<void> {
+  const db = getDatabase();
+  await db.run(
+    `UPDATE user_auth_identities SET last_login_at = ? WHERE id = ?`,
+    [new Date().toISOString(), id]
+  );
+}
+
+export async function unlinkUserIdentity(userId: string, provider: string): Promise<boolean> {
+  const db = getDatabase();
+  const res = await db.run(
+    `DELETE FROM user_auth_identities WHERE user_id = ? AND provider = ?`,
+    [userId, provider]
+  );
+  return res.changes > 0;
 }
 
 export async function createUser(data: {
   email: string;
-  passwordHash: string;
+  passwordHash?: string;
   fullName: string;
   role?: "ADMIN" | "PARTICIPANT" | "STAFF";
   phone?: string;
   country?: string;
   documentId?: string;
+  emailVerified?: boolean;
 }): Promise<User> {
   const db = getDatabase();
   const userId = `USR-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
   const nowIso = new Date().toISOString();
   const role = data.role || "PARTICIPANT";
+  const verified = data.emailVerified ? 1 : 0;
+  const hash = data.passwordHash || "";
 
   await db.run(
     `INSERT INTO users (id, email, password_hash, full_name, role, is_active, email_verified, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)`,
-    [userId, data.email.toLowerCase().trim(), data.passwordHash, data.fullName.trim(), role, nowIso, nowIso]
+     VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+    [userId, data.email.toLowerCase().trim(), hash, data.fullName.trim(), role, verified, nowIso, nowIso]
   );
 
   await db.run(
@@ -348,6 +449,39 @@ export async function createUser(data: {
   const created = await findUserById(userId);
   if (!created) throw new Error("Error al recuperar el usuario recién creado");
   return created;
+}
+
+export async function createUserWithIdentity(data: {
+  email: string;
+  fullName: string;
+  role?: "ADMIN" | "PARTICIPANT" | "STAFF";
+  provider: string;
+  providerSubject: string;
+  providerEmail: string;
+  phone?: string;
+  country?: string;
+  documentId?: string;
+}): Promise<User> {
+  const user = await createUser({
+    email: data.email,
+    passwordHash: "",
+    fullName: data.fullName,
+    role: data.role || "PARTICIPANT",
+    phone: data.phone,
+    country: data.country || "AR",
+    documentId: data.documentId,
+    emailVerified: true,
+  });
+
+  await linkUserIdentity({
+    userId: user.id,
+    provider: data.provider,
+    providerSubject: data.providerSubject,
+    providerEmail: data.providerEmail,
+  });
+
+  const refreshed = await findUserById(user.id);
+  return refreshed || user;
 }
 
 export async function findOrCreateParticipant(data: {
@@ -417,7 +551,7 @@ export async function createEnrollment(data: {
   capacitacionId: string;
   ofertaId?: string | null;
   modalityId: ModalityId;
-  currency: "ARS" | "USD";
+  currency?: "ARS" | "USD";
   amountTotal: number;
   paymentMethod?: string | null;
   notes?: string | null;
@@ -438,7 +572,7 @@ export async function createEnrollment(data: {
       data.capacitacionId,
       data.ofertaId || null,
       data.modalityId,
-      data.currency,
+      data.currency || "ARS",
       data.amountTotal,
       data.paymentMethod || null,
       data.notes || null,

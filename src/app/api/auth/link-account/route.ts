@@ -1,0 +1,131 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { verifyAccountLinkingToken } from "@/lib/auth/google";
+import { findUserByEmail, linkUserIdentity, recordAuditLog } from "@/lib/db/repository";
+import { verifyPassword } from "@/lib/auth/passwords";
+import { createSession, SESSION_COOKIE_NAME } from "@/lib/auth/session";
+
+export const dynamic = "force-dynamic";
+
+const LinkAccountSchema = z.object({
+  token: z.string().min(1, "El token de vinculación es requerido"),
+  password: z.string().min(1, "La contraseña es requerida"),
+});
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const parsed = LinkAccountSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "VALIDATION_ERROR",
+          issues: parsed.error.issues,
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { token, password } = parsed.data;
+
+    // 1. Validar el token criptográfico de vinculación
+    const payload = await verifyAccountLinkingToken(token);
+    if (!payload) {
+      return NextResponse.json(
+        {
+          error: "INVALID_LINK_TOKEN",
+          message:
+            "El token de vinculación ha expirado o es inválido. Por favor intentá iniciar sesión con Google nuevamente.",
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 400 }
+      );
+    }
+
+    // 2. Buscar al usuario institucional existente
+    const user = await findUserByEmail(payload.email);
+    if (!user) {
+      return NextResponse.json(
+        {
+          error: "USER_NOT_FOUND",
+          message: "No se encontró el perfil institucional asociado al correo.",
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 404 }
+      );
+    }
+
+    // 3. Verificar que la contraseña ingresada sea la correcta (Prueba segura de titularidad)
+    const isPasswordValid = await verifyPassword(password, user.password_hash);
+    if (!isPasswordValid) {
+      await recordAuditLog({
+        userId: user.id,
+        action: "AUTH_LINK_FAILED_BAD_PASSWORD",
+        entityType: "user",
+        entityId: user.id,
+        details: { email: user.email, provider: "google" },
+      });
+
+      return NextResponse.json(
+        {
+          error: "INVALID_PASSWORD",
+          message: "Contraseña incorrecta. Verificá tus credenciales para confirmar la vinculación.",
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 401 }
+      );
+    }
+
+    // 4. Vincular la identidad externa de Google de forma definitiva
+    await linkUserIdentity({
+      userId: user.id,
+      provider: "google",
+      providerSubject: payload.googleSub,
+      providerEmail: payload.googleEmail,
+    });
+
+    // 5. Iniciar sesión institucional y registrar auditoría
+    const sessionToken = await createSession(user);
+
+    await recordAuditLog({
+      userId: user.id,
+      action: "AUTH_LINK_GOOGLE_SUCCESS",
+      entityType: "user",
+      entityId: user.id,
+      details: { email: user.email, sub: payload.googleSub },
+    });
+
+    const res = NextResponse.json(
+      {
+        success: true,
+        message: "Cuenta vinculada exitosamente con Google.",
+        redirectUrl: payload.redirectPath || "/participante",
+        canary: "DAOM-LEARNING-H031-COMPLETE",
+      },
+      { status: 200 }
+    );
+
+    res.cookies.set({
+      name: SESSION_COOKIE_NAME,
+      value: sessionToken,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return res;
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        error: "INTERNAL_ERROR",
+        message: err.message,
+        canary: "DAOM-LEARNING-H031-COMPLETE",
+      },
+      { status: 500 }
+    );
+  }
+}
