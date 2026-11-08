@@ -46,7 +46,9 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
 export async function getCurrentUser(): Promise<User | null> {
   const session = await getCurrentSession();
   if (!session) return null;
-  return await findUserById(session.userId);
+  const user = await findUserById(session.userId);
+  if (!user || !user.is_active) return null;
+  return user;
 }
 
 export async function destroySession(): Promise<void> {

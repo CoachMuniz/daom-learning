@@ -1,15 +1,9 @@
 import React from "react";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import {
   ShieldCheck,
-  RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  Users,
-  GraduationCap,
-  Download,
-  Clock,
   ExternalLink,
   Activity,
   FileSpreadsheet,
@@ -34,16 +28,23 @@ export const metadata = {
 
 export default async function AdminPage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user) {
     redirect("/login?redirect=/admin");
   }
+  // H032: Conservar roles ADMIN, STAFF y PARTICIPANT.
+  // PARTICIPANT nunca puede acceder al panel administrativo.
+  if (user.role !== "ADMIN" && user.role !== "STAFF") {
+    redirect("/login?redirect=/admin&error=unauthorized_admin");
+  }
 
+  const isFullAdmin = user.role === "ADMIN";
   const trainings = await getAllTrainingsAdmin();
   const instructors = await getAllInstructorsAdmin();
   const editorialControls = await getAllEditorialControls();
   const enrollments = await getAllEnrollmentsAdmin();
   const syncRuns = await getRecentSyncRuns(5);
-  const auditLogs = await getAuditLogs(15);
+  // Registro de auditoría reservado a ADMIN
+  const auditLogs = isFullAdmin ? await getAuditLogs(15) : [];
 
   const publishedCount = trainings.filter(
     (t) => t.estado_editorial === "publicado" && t.verificacion === "verificado"
@@ -57,7 +58,7 @@ export default async function AdminPage() {
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-daom-red-dark uppercase tracking-wider">
             <ShieldCheck className="w-4 h-4" />
-            <span>Consola de Control y Auditoría Editorial</span>
+            <span>Consola de Control y Auditoría Editorial ({user.role})</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-daom-neutral-900 tracking-tight">
             Administración — DAOM Learning
@@ -67,7 +68,8 @@ export default async function AdminPage() {
           </p>
         </div>
 
-        <AdminSyncButton />
+        {/* H032: No otorgar a STAFF permisos de mutación reservados exclusivamente a ADMIN */}
+        {isFullAdmin && <AdminSyncButton />}
       </div>
 
       {/* Tarjetas de Métricas de Control */}
@@ -131,15 +133,17 @@ export default async function AdminPage() {
               Control independiente de estado editorial (publicado/borrador) y verificación (verificado/pendiente).
             </p>
           </div>
-          <a
-            href="https://docs.google.com/spreadsheets/d/1LlUzvMbEoJ4-ATmecOCyRBgy19Hrib4cdkpyLaspjI4/edit"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-daom-blue hover:underline"
-          >
-            <span>Abrir Planilla Google Sheets</span>
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          {isFullAdmin && (
+            <a
+              href="https://docs.google.com/spreadsheets/d/1LlUzvMbEoJ4-ATmecOCyRBgy19Hrib4cdkpyLaspjI4/edit"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-daom-blue hover:underline"
+            >
+              <span>Abrir Planilla Google Sheets</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -239,39 +243,41 @@ export default async function AdminPage() {
         </div>
       </section>
 
-      {/* SECCIÓN: AUDITORÍA RECIENTE */}
-      <section className="bg-white rounded-xl border border-daom-neutral-200 shadow-card p-6 space-y-4">
-        <h2 className="text-lg font-bold text-daom-neutral-900 flex items-center gap-2">
-          <Activity className="w-5 h-5 text-daom-blue" />
-          <span>Registro de Auditoría y Eventos Operativos</span>
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-daom-neutral-50 text-daom-neutral-700 font-bold border-b border-daom-neutral-200">
-              <tr>
-                <th className="p-2.5">Fecha / Hora</th>
-                <th className="p-2.5">Acción</th>
-                <th className="p-2.5">Entidad</th>
-                <th className="p-2.5">ID Entidad</th>
-                <th className="p-2.5">Detalles</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-daom-neutral-100">
-              {auditLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-daom-neutral-50/50">
-                  <td className="p-2.5 text-daom-neutral-500 font-mono">
-                    {new Date(log.created_at).toLocaleString()}
-                  </td>
-                  <td className="p-2.5 font-bold text-daom-neutral-800">{log.action}</td>
-                  <td className="p-2.5 text-daom-neutral-500">{log.entity_type}</td>
-                  <td className="p-2.5 font-mono text-daom-neutral-700">{log.entity_id}</td>
-                  <td className="p-2.5 text-daom-neutral-600 truncate max-w-xs">{log.details || "—"}</td>
+      {/* SECCIÓN: AUDITORÍA RECIENTE (Exclusivo ADMIN) */}
+      {isFullAdmin && (
+        <section className="bg-white rounded-xl border border-daom-neutral-200 shadow-card p-6 space-y-4">
+          <h2 className="text-lg font-bold text-daom-neutral-900 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-daom-blue" />
+            <span>Registro de Auditoría y Eventos Operativos</span>
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-daom-neutral-50 text-daom-neutral-700 font-bold border-b border-daom-neutral-200">
+                <tr>
+                  <th className="p-2.5">Fecha / Hora</th>
+                  <th className="p-2.5">Acción</th>
+                  <th className="p-2.5">Entidad</th>
+                  <th className="p-2.5">ID Entidad</th>
+                  <th className="p-2.5">Detalles</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody className="divide-y divide-daom-neutral-100">
+                {auditLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-daom-neutral-50/50">
+                    <td className="p-2.5 text-daom-neutral-500 font-mono">
+                      {new Date(log.created_at).toLocaleString()}
+                    </td>
+                    <td className="p-2.5 font-bold text-daom-neutral-800">{log.action}</td>
+                    <td className="p-2.5 text-daom-neutral-500">{log.entity_type}</td>
+                    <td className="p-2.5 font-mono text-daom-neutral-700">{log.entity_id}</td>
+                    <td className="p-2.5 text-daom-neutral-600 truncate max-w-xs">{log.details || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

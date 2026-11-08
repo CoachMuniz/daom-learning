@@ -84,7 +84,7 @@ export function Navbar({ user }: NavbarProps) {
           <div className="hidden md:flex items-center space-x-3">
             {user ? (
               <div className="flex items-center gap-2">
-                {user.role === "ADMIN" && (
+                {(user.role === "ADMIN" || user.role === "STAFF") && (
                   <Link
                     href="/admin"
                     className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-daom-red-dark bg-daom-red-soft hover:bg-red-100 rounded-md transition-colors"
@@ -196,7 +196,7 @@ export function Navbar({ user }: NavbarProps) {
                 >
                   Mi Cuenta ({user.fullName})
                 </Link>
-                {user.role === "ADMIN" && (
+                {(user.role === "ADMIN" || user.role === "STAFF") && (
                   <Link
                     href="/admin"
                     onClick={() => setIsOpen(false)}

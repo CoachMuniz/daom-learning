@@ -9,9 +9,11 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect") || "/participante";
+  const isAdminLogin = redirectUrl === "/admin" || redirectUrl.startsWith("/admin/") || redirectUrl.startsWith("/admin?");
   const linkPending = searchParams.get("link_pending") === "true";
   const linkToken = searchParams.get("token") || "";
   const initialEmail = searchParams.get("email") || "";
+  const errParam = searchParams.get("error");
 
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -25,28 +27,47 @@ function LoginForm() {
     if (initialEmail && !email) {
       setEmail(initialEmail);
     }
-  }, [initialEmail]);
+  }, [initialEmail, email]);
+
+  // Reutilización segura de sesión si ya está autenticado con los permisos requeridos
+  useEffect(() => {
+    if (errParam || linkPending) return;
+    let active = true;
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!active || !data?.authenticated || !data?.user) return;
+        if (isAdminLogin) {
+          if (data.user.role === "ADMIN" || data.user.role === "STAFF") {
+            router.replace(redirectUrl);
+            router.refresh();
+          }
+        } else {
+          router.replace(redirectUrl);
+          router.refresh();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [errParam, linkPending, isAdminLogin, redirectUrl, router]);
 
   useEffect(() => {
-    const errParam = searchParams.get("error");
     if (errParam) {
-      if (errParam === "google_oauth_pending_configuration") {
+      if (errParam === "unauthorized_admin") {
+        setError("Tu cuenta está identificada, pero no tiene permisos para acceder a este panel");
+      } else if (errParam === "account_disabled") {
+        setError("Esta cuenta institucional se encuentra deshabilitada.");
+      } else if (errParam === "google_oauth_pending_configuration") {
         setError(
           "El inicio de sesión con Google requiere credenciales activas en Google Cloud Console. Podés ingresar con tu correo y contraseña habituales."
         );
-      } else if (errParam === "unverified_google_email") {
-        setError(
-          "Tu cuenta de Google no tiene el correo electrónico verificado. Por favor verificalo en Google o ingresá con contraseña."
-        );
-      } else if (errParam === "invalid_oauth_state" || errParam === "missing_oauth_parameters") {
-        setError("La sesión de autenticación expiró o es inválida. Por favor intentá nuevamente.");
-      } else if (errParam.includes("access_denied")) {
-        setError("Se canceló el inicio de sesión con Google.");
       } else {
-        setError(`Error al iniciar sesión: ${errParam.replace(/_/g, " ")}`);
+        setError("No pudimos completar el ingreso con Google. Intentá nuevamente");
       }
     }
-  }, [searchParams]);
+  }, [errParam]);
 
   // Manejo de inicio de sesión tradicional (correo y contraseña)
   async function handleSubmit(e: React.FormEvent) {
@@ -64,6 +85,12 @@ function LoginForm() {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.message || "Error al iniciar sesión.");
+      }
+
+      if (isAdminLogin && data.user?.role !== "ADMIN" && data.user?.role !== "STAFF") {
+        setError("Tu cuenta está identificada, pero no tiene permisos para acceder a este panel");
+        setLoading(false);
+        return;
       }
 
       router.push(redirectUrl);
@@ -100,7 +127,7 @@ function LoginForm() {
       setTimeout(() => {
         router.push(data.redirectUrl || redirectUrl);
         router.refresh();
-      }, 1000);
+      }, 800);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -112,20 +139,22 @@ function LoginForm() {
     <div className="max-w-md mx-auto px-4 py-16 sm:py-24 space-y-8">
       <div className="text-center space-y-2">
         <div className="w-12 h-12 rounded-full bg-daom-blue-soft text-daom-blue flex items-center justify-center mx-auto">
-          <Lock className="w-6 h-6" />
+          {isAdminLogin ? <ShieldCheck className="w-6 h-6" /> : <Lock className="w-6 h-6" />}
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-daom-neutral-900 tracking-tight">
-          Acceso al Área de Alumnos
+          {isAdminLogin ? "Panel Administrativo — DAOM Learning" : "Acceso al Área de Alumnos"}
         </h1>
         <p className="text-xs sm:text-sm text-daom-neutral-600">
-          Iniciá sesión para acceder a tus capacitaciones, materiales ZIP y certificados oficiales.
+          {isAdminLogin
+            ? "Ingreso exclusivo para administradores y equipo académico autorizado."
+            : "Iniciá sesión para acceder a tus capacitaciones, materiales ZIP y certificados oficiales."}
         </p>
       </div>
 
       {error && (
         <div
           role="alert"
-          className="bg-[#FFF1F0] border border-[#FBC5C2] p-4 rounded-lg flex items-start gap-2.5 text-[#B42318] text-xs leading-relaxed"
+          className="bg-[#FFF1F0] border border-[#FBC5C2] p-4 rounded-lg flex items-start gap-2.5 text-[#B42318] text-xs font-semibold leading-relaxed"
         >
           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{error}</span>
@@ -142,17 +171,21 @@ function LoginForm() {
         </div>
       )}
 
-      {/* Caso: Vinculación Segura de Cuenta Existente */}
+      {/* Caso B: Vinculación Segura de Cuenta Existente */}
       {linkPending && linkToken ? (
         <div className="bg-white p-6 sm:p-8 rounded-lg border border-daom-blue-soft shadow-card space-y-5">
           <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2.5">
             <ShieldCheck className="w-4 h-4 shrink-0 text-daom-blue mt-0.5" />
             <div>
-              <p className="font-bold">Cuenta Institucional Existente</p>
+              <p className="font-bold">Verificación de titularidad requerida</p>
               <p className="text-neutral-700 mt-1">
-                Detectamos una cuenta registrada con el correo <strong>{initialEmail}</strong>.
-                Para vincularla con Google y proteger tus datos, confirmá tu contraseña actual.
+                Encontramos una cuenta administrativa existente. Para vincularla con Google, verificá primero tu acceso habitual
               </p>
+              {initialEmail && (
+                <p className="text-[11px] text-neutral-600 font-mono mt-1">
+                  Cuenta: <strong>{initialEmail}</strong>
+                </p>
+              )}
             </div>
           </div>
 
@@ -210,7 +243,8 @@ function LoginForm() {
           <div className="space-y-2">
             <a
               href={`/api/auth/google?redirect=${encodeURIComponent(redirectUrl)}`}
-              className="w-full min-h-[44px] px-4 py-3 bg-white border border-daom-neutral-300 hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 rounded-md font-semibold text-sm inline-flex items-center justify-center gap-3 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-daom-blue"
+              data-testid="learning-google-login-button"
+              className="w-full min-h-[44px] px-4 py-3 bg-white border border-daom-neutral-300 hover:bg-neutral-50 hover:border-neutral-400 text-neutral-800 rounded-md font-bold text-sm inline-flex items-center justify-center gap-3 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-daom-blue"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -230,18 +264,18 @@ function LoginForm() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                 />
               </svg>
-              <span>Continuar con Google</span>
+              <span>CONTINUAR CON GOOGLE</span>
             </a>
           </div>
 
-          {/* SEPARADOR: O ingresá con tu correo */}
+          {/* SEPARADOR: O INGRESÁ CON TU CORREO */}
           <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-daom-neutral-200" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-3 text-daom-neutral-500 font-semibold tracking-wider">
-                O ingresá con tu correo
+              <span className="bg-white px-3 text-daom-neutral-500 font-bold tracking-wider">
+                O INGRESÁ CON TU CORREO
               </span>
             </div>
           </div>
@@ -298,7 +332,7 @@ function LoginForm() {
                 </>
               ) : (
                 <>
-                  <span>Ingresar</span>
+                  <span>{isAdminLogin ? "Ingresar al panel" : "Ingresar"}</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -306,15 +340,17 @@ function LoginForm() {
 
             {/* ACCIONES ADICIONALES */}
             <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-daom-neutral-600">
-              <div>
-                ¿No tenés cuenta aún?{" "}
-                <Link
-                  href={`/registro?redirect=${encodeURIComponent(redirectUrl)}`}
-                  className="font-bold text-daom-blue hover:underline"
-                >
-                  Registrarse
-                </Link>
-              </div>
+              {!isAdminLogin && (
+                <div>
+                  ¿No tenés cuenta aún?{" "}
+                  <Link
+                    href={`/registro?redirect=${encodeURIComponent(redirectUrl)}`}
+                    className="font-bold text-daom-blue hover:underline"
+                  >
+                    Registrarse
+                  </Link>
+                </div>
+              )}
               <div>
                 <a
                   href="https://wa.me/5491100000000?text=Hola,%20necesito%20ayuda%20para%20recuperar%20mi%20contraseña%20en%20DAOM%20Learning"

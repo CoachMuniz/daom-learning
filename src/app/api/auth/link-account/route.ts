@@ -12,6 +12,12 @@ const LinkAccountSchema = z.object({
   password: z.string().min(1, "La contraseña es requerida"),
 });
 
+function isAdminRedirect(redirectPath?: string | null): boolean {
+  if (!redirectPath || typeof redirectPath !== "string") return false;
+  const trimmed = redirectPath.trim();
+  return trimmed === "/admin" || trimmed.startsWith("/admin/") || trimmed.startsWith("/admin?");
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -57,8 +63,22 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!user.is_active) {
+      return NextResponse.json(
+        {
+          error: "ACCOUNT_INACTIVE",
+          message: "Esta cuenta institucional se encuentra deshabilitada.",
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 403 }
+      );
+    }
+
     // 3. Verificar que la contraseña ingresada sea la correcta (Prueba segura de titularidad)
-    const isPasswordValid = await verifyPassword(password, user.password_hash);
+    const isPasswordValid =
+      Boolean(user.password_hash && user.password_hash.trim().length > 0) &&
+      (await verifyPassword(password, user.password_hash));
+
     if (!isPasswordValid) {
       await recordAuditLog({
         userId: user.id,
@@ -79,12 +99,23 @@ export async function POST(request: Request) {
     }
 
     // 4. Vincular la identidad externa de Google de forma definitiva
-    await linkUserIdentity({
-      userId: user.id,
-      provider: "google",
-      providerSubject: payload.googleSub,
-      providerEmail: payload.googleEmail,
-    });
+    try {
+      await linkUserIdentity({
+        userId: user.id,
+        provider: "google",
+        providerSubject: payload.googleSub,
+        providerEmail: payload.googleEmail,
+      });
+    } catch (linkErr: any) {
+      return NextResponse.json(
+        {
+          error: "IDENTITY_CONFLICT",
+          message: linkErr.message || "Esta cuenta externa ya está vinculada a otro perfil institucional.",
+          canary: "DAOM-LEARNING-H031-COMPLETE",
+        },
+        { status: 409 }
+      );
+    }
 
     // 5. Iniciar sesión institucional y registrar auditoría
     const sessionToken = await createSession(user);
@@ -94,15 +125,35 @@ export async function POST(request: Request) {
       action: "AUTH_LINK_GOOGLE_SUCCESS",
       entityType: "user",
       entityId: user.id,
-      details: { email: user.email, sub: payload.googleSub },
+      details: { email: user.email, role: user.role, sub: payload.googleSub },
     });
+
+    // Si la intención era acceder al panel /admin pero el usuario vinculado es PARTICIPANT, denegar acceso a /admin
+    const targetRedirect = payload.redirectPath || "/participante";
+    if (isAdminRedirect(targetRedirect) && user.role !== "ADMIN" && user.role !== "STAFF") {
+      return NextResponse.json(
+        {
+          error: "UNAUTHORIZED_ADMIN",
+          message: "Tu cuenta está identificada, pero no tiene permisos para acceder a este panel",
+          canary: "DAOM-H032-ADMIN-GOOGLE-AUTH-COMPLETE",
+        },
+        { status: 403 }
+      );
+    }
 
     const res = NextResponse.json(
       {
         success: true,
         message: "Cuenta vinculada exitosamente con Google.",
-        redirectUrl: payload.redirectPath || "/participante",
+        redirectUrl: targetRedirect,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.full_name,
+          role: user.role,
+        },
         canary: "DAOM-LEARNING-H031-COMPLETE",
+        adminCanary: "DAOM-H032-ADMIN-GOOGLE-AUTH-COMPLETE",
       },
       { status: 200 }
     );
