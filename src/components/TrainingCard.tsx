@@ -1,3 +1,4 @@
+import { findMatchingPrice } from '@/lib/commercial/rules';
 import React from "react";
 import Link from "next/link";
 import { Clock, Users, Calendar, ArrowRight, ShieldCheck } from "lucide-react";
@@ -10,8 +11,8 @@ interface TrainingCardProps {
 
 export function TrainingCard({ training }: TrainingCardProps) {
   const nextEdition = training.ediciones && training.ediciones.length > 0 ? training.ediciones[0] : null;
-  const priceAr = nextEdition?.precios?.find((p) => p.mercado === "AR");
-  const priceInt = nextEdition?.precios?.find((p) => p.mercado === "INT");
+  const priceAr = nextEdition?.precios ? findMatchingPrice(nextEdition.precios, "AR", "ARS") : undefined;
+  const priceInt = nextEdition?.precios ? findMatchingPrice(nextEdition.precios, "INT", "USD") : undefined;
 
   return (
     <article className="flex flex-col bg-white rounded-lg border border-daom-neutral-200 overflow-hidden shadow-card hover:shadow-md transition-shadow">

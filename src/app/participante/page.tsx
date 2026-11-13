@@ -13,6 +13,9 @@ import {
   FileCheck,
   LogOut,
   ExternalLink,
+  CreditCard,
+  Play,
+  Video,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
@@ -136,9 +139,22 @@ export default async function ParticipantePage() {
                   </div>
 
                   {enr.status === "pendiente_pago" && (
-                    <div className="bg-[#FFF7DF] p-3 rounded border border-[#F2DE9C] text-xs text-[#8A5A00]">
-                      Inscripción registrada. Para completar el pago y habilitar los materiales, comunicate con nuestro bot
-                      o por WhatsApp (+54 11 3039-3030) indicando tu código <strong>{enr.id}</strong>.
+                    <div className="bg-[#FFF7DF] p-4 rounded-lg border border-[#F2DE9C] text-xs text-[#8A5A00] space-y-3">
+                      <div>
+                        Inscripción iniciada con vacante reservada temporalmente. Para confirmar tu lugar y habilitar el acceso a los materiales y transmisiones, completá el pago a través de Mercado Pago.
+                      </div>
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                        <a
+                          href={`/api/inscripciones/${enr.id}/reintentar`}
+                          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-[#009EE3] hover:bg-[#0081BA] rounded-md transition-colors shadow-sm min-h-[44px]"
+                        >
+                          <CreditCard className="w-4 h-4" />
+                          <span>Pagar ahora con Mercado Pago</span>
+                        </a>
+                        <span className="text-[11px] text-[#8A5A00] opacity-80 self-center">
+                          Código: <strong>{enr.id}</strong>
+                        </span>
+                      </div>
                     </div>
                   )}
 
@@ -166,6 +182,104 @@ export default async function ParticipantePage() {
             para elegir una formación.
           </div>
         )}
+      </section>
+
+      {/* SECCIÓN ON-DEMAND: GRABACIONES Y CLASES EN VIDEO */}
+      <section id="grabaciones" className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-extrabold text-daom-neutral-900 flex items-center gap-2">
+              <Video className="w-5 h-5 text-daom-blue" />
+              <span>Mis Grabaciones y Clases On Demand</span>
+            </h2>
+            <p className="text-xs text-daom-neutral-500">
+              Acceso a reproducciones protegidas de capacitaciones confirmadas en streaming u on-demand.
+            </p>
+          </div>
+          <span className="text-xs text-daom-neutral-500 font-medium">
+            {enrollments.filter((e) => e.status === "confirmada" && (e.modality_id === "on_demand" || e.modality_id === "streaming")).length} habilitadas
+          </span>
+        </div>
+
+        {(() => {
+          const eligibleEnrollments = enrollments.filter(
+            (e) => e.status === "confirmada" && (e.modality_id === "on_demand" || e.modality_id === "streaming")
+          );
+
+          if (eligibleEnrollments.length === 0) {
+            return (
+              <div className="bg-white rounded-lg border border-daom-neutral-200 p-8 text-center text-sm text-daom-neutral-600">
+                No contás con grabaciones activas. Las grabaciones se habilitan para inscripciones confirmadas en modalidad Streaming u On-Demand una vez procesada la edición.
+              </div>
+            );
+          }
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {eligibleEnrollments.map((enr) => {
+                const videoUrl = enr.edition?.vimeo_url || enr.training?.video_url;
+                const vimeoId = enr.edition?.vimeo_video_id;
+
+                let embedUrl: string | null = null;
+                if (vimeoId) {
+                  embedUrl = `https://player.vimeo.com/video/${vimeoId}?dnt=1&app_id=122963`;
+                } else if (videoUrl && videoUrl.includes("vimeo.com/")) {
+                  const idMatch = videoUrl.match(/vimeo\.com\/(?:video\/)?([0-9]+)/);
+                  if (idMatch && idMatch[1]) {
+                    embedUrl = `https://player.vimeo.com/video/${idMatch[1]}?dnt=1&app_id=122963`;
+                  }
+                }
+
+                return (
+                  <div
+                    key={`video-${enr.id}`}
+                    className="bg-white rounded-lg border border-daom-neutral-200 p-6 shadow-card space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-mono text-daom-neutral-400">
+                          {enr.capacitacion_id}
+                        </span>
+                        <StatusBadge
+                          label={embedUrl ? "DISPONIBLE" : "EN PROCESAMIENTO"}
+                          variant={embedUrl ? "success" : "warning"}
+                        />
+                      </div>
+                      <h3 className="text-base font-bold text-daom-neutral-900">
+                        {enr.training?.titulo || "Capacitación DAOM"}
+                      </h3>
+                      <p className="text-xs text-daom-neutral-500">
+                        Modalidad: <span className="capitalize font-semibold text-daom-neutral-700">{enr.modality_id}</span>
+                      </p>
+                    </div>
+
+                    {embedUrl ? (
+                      <div className="relative aspect-video w-full rounded-md overflow-hidden bg-black border border-daom-neutral-200">
+                        <iframe
+                          src={embedUrl}
+                          className="w-full h-full border-0"
+                          allow="autoplay; fullscreen; picture-in-picture"
+                          allowFullScreen
+                          title={enr.training?.titulo || "Clase DAOM"}
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-[#FFF7DF] p-4 rounded-lg border border-[#F2DE9C] text-xs text-[#8A5A00] space-y-1">
+                        <p className="font-bold flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 shrink-0 text-[#8A5A00]" />
+                          <span>Grabación en edición técnica</span>
+                        </p>
+                        <p>
+                          La filmación de esta jornada está siendo procesada y masterizada por el equipo técnico. Estará disponible en este reproductor automáticamente en cuanto finalice el control de calidad.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </section>
 
       {/* SECCIÓN 2: MATERIALES COMPLEMENTARIOS (ARCHIVOS ZIP PROTEGIDOS) */}

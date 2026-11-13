@@ -1,3 +1,4 @@
+import { findMatchingPrice } from '@/lib/commercial/rules';
 import React from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -51,8 +52,8 @@ export default async function TrainingDetailPage({ params }: TrainingDetailPageP
 
   const user = await getCurrentUser();
   const nextEdition = training.ediciones && training.ediciones.length > 0 ? training.ediciones[0] : null;
-  const priceAr = nextEdition?.precios?.find((p) => p.mercado === "AR");
-  const priceInt = nextEdition?.precios?.find((p) => p.mercado === "INT");
+  const priceAr = nextEdition?.precios ? findMatchingPrice(nextEdition.precios, "AR", "ARS") : undefined;
+  const priceInt = nextEdition?.precios ? findMatchingPrice(nextEdition.precios, "INT", "USD") : undefined;
 
   const courseJsonLd = {
     "@context": "https://schema.org",

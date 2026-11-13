@@ -75,6 +75,47 @@ const LEGAL_NOTICE_STANDARD =
   "Las condiciones comerciales rigen para cambios voluntarios de modalidad y cancelaciones comerciales sin perjuicio de los derechos irrenunciables del consumidor consagrados en la Ley N° 24.240 y el Código Civil y Comercial de la Nación.";
 
 /**
+ * Normaliza y compara de forma robusta etiquetas de mercado (AR, ARGENTINA, Argentina, etc.).
+ */
+export function isArgentinaMarket(market?: string | null): boolean {
+  if (!market) return false;
+  const clean = market.trim().toUpperCase();
+  return clean === "AR" || clean === "ARGENTINA" || clean === "ARG";
+}
+
+export function isInternationalMarket(market?: string | null): boolean {
+  if (!market) return false;
+  const clean = market.trim().toUpperCase();
+  return clean === "INT" || clean === "INTERNACIONAL" || clean === "INTERNATIONAL" || clean === "USD" || clean === "EXTERIOR";
+}
+
+/**
+ * Selecciona el precio oficial aplicable para un mercado y moneda dados desde una lista de precios.
+ */
+export function findMatchingPrice(
+  prices: Price[],
+  market: "AR" | "INT" | string = "AR",
+  preferredCurrency: "ARS" | "USD" | string = "ARS"
+): Price | undefined {
+  if (!prices || prices.length === 0) return undefined;
+
+  if (market === "AR" || isArgentinaMarket(market) || preferredCurrency === "ARS") {
+    return (
+      prices.find((p) => p.moneda === "ARS" && isArgentinaMarket(p.mercado)) ||
+      prices.find((p) => p.moneda === "ARS") ||
+      prices.find((p) => isArgentinaMarket(p.mercado)) ||
+      prices[0]
+    );
+  }
+
+  return (
+    prices.find((p) => isInternationalMarket(p.mercado)) ||
+    prices.find((p) => p.moneda === "USD") ||
+    prices[0]
+  );
+}
+
+/**
  * Retorna la pasarela oficial según el mercado del usuario.
  * Decisión Comercial Definitiva: MERCADO PAGO es el proveedor único habilitado (nacional e internacional).
  * Se conserva el tipo 'stripe' únicamente para compatibilidad con registros históricos existentes.

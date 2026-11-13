@@ -38,8 +38,12 @@ function InscribirForm() {
         throw new Error(data.message || "Error al iniciar la inscripción.");
       }
 
-      router.push("/participante");
-      router.refresh();
+      if (data.checkout?.checkoutUrl) {
+        window.location.href = data.checkout.checkoutUrl;
+      } else {
+        router.push("/participante");
+        router.refresh();
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
