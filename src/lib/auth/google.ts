@@ -10,8 +10,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { SignJWT, jwtVerify } from "jose";
 
-export const CANONICAL_LEARNING_URL = "https://daom-learning.onrender.com";
+export const INSTITUTIONAL_LEARNING_URL = "https://learning.daom-weightlifting.com";
+export const CANONICAL_LEARNING_URL = INSTITUTIONAL_LEARNING_URL;
 export const CANONICAL_SITE_URL = "https://www.daom-weightlifting.com";
+export const LEGACY_RENDER_URL = "https://daom-learning.onrender.com";
 
 const DEFAULT_SECRET = "super_secret_jwt_key_at_least_32_characters_long_daom_2026";
 
@@ -91,6 +93,7 @@ export function resolveSafeRedirectUrl(
       new URL(base).origin.toLowerCase(),
       new URL(CANONICAL_LEARNING_URL).origin.toLowerCase(),
       new URL(CANONICAL_SITE_URL).origin.toLowerCase(),
+      new URL(LEGACY_RENDER_URL).origin.toLowerCase(),
     ];
 
     if (allowedOrigins.includes(parsedOrigin)) {

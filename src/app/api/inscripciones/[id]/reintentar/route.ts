@@ -21,7 +21,7 @@ export async function GET(
   const siteUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_URL ||
-    (process.env.RENDER_EXTERNAL_URL ? `https://${process.env.RENDER_EXTERNAL_URL}` : "https://daom-learning.onrender.com");
+    "https://learning.daom-weightlifting.com";
 
   if (!session) {
     return NextResponse.redirect(`${siteUrl}/login?redirect=/participante`);

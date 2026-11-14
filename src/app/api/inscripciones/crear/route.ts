@@ -162,7 +162,7 @@ export async function POST(request: Request) {
     const siteUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.APP_URL ||
-      (process.env.RENDER_EXTERNAL_URL ? `https://${process.env.RENDER_EXTERNAL_URL}` : "https://daom-learning.onrender.com");
+      "https://learning.daom-weightlifting.com";
 
     const checkoutSessionId = `chk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const internalCheckoutUrl = `${siteUrl}/capacitaciones/checkout?enrollment_id=${enrollment.id}&session_id=${checkoutSessionId}`;

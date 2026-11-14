@@ -109,6 +109,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/campus" className="text-daom-neutral-600 hover:text-daom-blue font-semibold">
+                  Campus de Alumnos
+                </Link>
+              </li>
+              <li>
                 <Link href="/participante" className="text-daom-neutral-600 hover:text-daom-blue">
                   Área de Participante
                 </Link>

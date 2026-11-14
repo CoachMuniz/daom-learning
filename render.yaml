@@ -9,6 +9,10 @@ services:
     healthCheckPath: /
     autoDeploy: true
     envVars:
+      - key: APP_URL
+        value: https://learning.daom-weightlifting.com
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://learning.daom-weightlifting.com
       - key: NODE_VERSION
         value: "22"
       - key: NODE_ENV

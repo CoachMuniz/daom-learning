@@ -352,14 +352,12 @@ function LoginForm() {
                 </div>
               )}
               <div>
-                <a
-                  href="https://wa.me/5491100000000?text=Hola,%20necesito%20ayuda%20para%20recuperar%20mi%20contraseña%20en%20DAOM%20Learning"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  href="/recuperar-password"
                   className="text-daom-neutral-500 hover:text-daom-blue hover:underline"
                 >
                   Recuperar contraseña
-                </a>
+                </Link>
               </div>
             </div>
           </form>

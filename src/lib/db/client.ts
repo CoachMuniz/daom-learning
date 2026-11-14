@@ -179,6 +179,15 @@ class SqliteDatabase implements IDatabase {
           `);
         }
 
+        // Garantizar columna stage en material_assets (DAOM-LEARNING-CAMPUS-01)
+        try {
+          const matCols = this.db.prepare("PRAGMA table_info(material_assets)").all();
+          const hasStage = matCols.some((c: any) => c.name === "stage");
+          if (!hasStage) {
+            this.db.exec("ALTER TABLE material_assets ADD COLUMN stage TEXT NOT NULL DEFAULT 'before'");
+          }
+        } catch {}
+
         // Garantizar columna whatsapp_group_url en training_editions (DAOM-LEARNING-MANUAL-ENROLLMENTS-01)
         try {
           const editionCols = this.db.prepare("PRAGMA table_info(training_editions)").all();
@@ -188,8 +197,26 @@ class SqliteDatabase implements IDatabase {
           }
         } catch {}
 
+        // Garantizar tabla password_recovery_tokens (DAOM-LEARNING-CAMPUS-01)
+        try {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS password_recovery_tokens (
+              token_id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              token_hash TEXT NOT NULL UNIQUE,
+              expires_at TEXT NOT NULL,
+              used_at TEXT,
+              revoked_at TEXT,
+              created_by TEXT NOT NULL DEFAULT 'LOCAL_ADMIN_CLI',
+              created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_recovery_tokens_user ON password_recovery_tokens(user_id);
+            CREATE INDEX IF NOT EXISTS idx_recovery_tokens_hash ON password_recovery_tokens(token_hash);
+          `);
+        } catch {}
         this.schemaApplied = true;
         return;
+
       }
     } catch {}
 

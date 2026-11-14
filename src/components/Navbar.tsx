@@ -49,6 +49,12 @@ export function Navbar({ user }: NavbarProps) {
               Inicio
             </Link>
             <Link
+              href="/campus"
+              className="px-3 py-2 text-sm font-semibold text-daom-neutral-700 hover:text-daom-blue hover:bg-daom-blue-soft rounded-md transition-colors"
+            >
+              Campus
+            </Link>
+            <Link
               href="/catalogo"
               className="px-3 py-2 text-sm font-medium text-daom-neutral-700 hover:text-daom-blue hover:bg-daom-blue-soft rounded-md transition-colors"
             >
@@ -94,11 +100,11 @@ export function Navbar({ user }: NavbarProps) {
                   </Link>
                 )}
                 <Link
-                  href="/participante"
+                  href="/campus"
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-daom-blue border border-daom-neutral-300 hover:bg-daom-blue-soft rounded-md min-h-[44px] transition-colors"
                 >
-                  <UserIcon className="w-4 h-4" />
-                  <span>Mi Cuenta ({user.fullName.split(" ")[0]})</span>
+                  <GraduationCap className="w-4 h-4" />
+                  <span>Campus Alumnos</span>
                 </Link>
               </div>
             ) : (
@@ -147,6 +153,14 @@ export function Navbar({ user }: NavbarProps) {
             Inicio
           </Link>
           <Link
+            href="/campus"
+            onClick={() => setIsOpen(false)}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-md text-base font-semibold text-daom-neutral-800 hover:bg-daom-blue-soft hover:text-daom-blue"
+          >
+            <GraduationCap className="w-5 h-5 text-daom-blue" />
+            Campus de Alumnos
+          </Link>
+          <Link
             href="/catalogo"
             onClick={() => setIsOpen(false)}
             className="flex items-center gap-2 px-3 py-2.5 rounded-md text-base font-medium text-daom-neutral-800 hover:bg-daom-blue-soft hover:text-daom-blue"
@@ -190,11 +204,11 @@ export function Navbar({ user }: NavbarProps) {
             {user ? (
               <>
                 <Link
-                  href="/participante"
+                  href="/campus"
                   onClick={() => setIsOpen(false)}
                   className="w-full flex items-center justify-center px-4 py-2.5 text-base font-semibold text-daom-blue border border-daom-blue rounded-md min-h-[44px]"
                 >
-                  Mi Cuenta ({user.fullName})
+                  Campus de Alumnos ({user.fullName})
                 </Link>
                 {(user.role === "ADMIN" || user.role === "STAFF") && (
                   <Link

@@ -364,3 +364,18 @@ CREATE TABLE IF NOT EXISTS editorial_controls (
   fecha_validacion TEXT,
   synced_at TEXT NOT NULL
 );
+
+-- 22. Tokens de Recuperación de Contraseña (H033 / DAOM-LEARNING-CAMPUS-01)
+CREATE TABLE IF NOT EXISTS password_recovery_tokens (
+  token_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  revoked_at TEXT,
+  created_by TEXT NOT NULL DEFAULT 'LOCAL_ADMIN_CLI',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_recovery_tokens_user ON password_recovery_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_recovery_tokens_hash ON password_recovery_tokens(token_hash);
