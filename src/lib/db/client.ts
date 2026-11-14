@@ -178,6 +178,16 @@ class SqliteDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_user_auth_identities_provider_email ON user_auth_identities(provider, provider_email);
           `);
         }
+
+        // Garantizar columna whatsapp_group_url en training_editions (DAOM-LEARNING-MANUAL-ENROLLMENTS-01)
+        try {
+          const editionCols = this.db.prepare("PRAGMA table_info(training_editions)").all();
+          const hasWhatsappCol = editionCols.some((c: any) => c.name === "whatsapp_group_url");
+          if (!hasWhatsappCol) {
+            this.db.exec("ALTER TABLE training_editions ADD COLUMN whatsapp_group_url TEXT");
+          }
+        } catch {}
+
         this.schemaApplied = true;
         return;
       }

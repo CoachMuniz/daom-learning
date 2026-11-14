@@ -19,6 +19,9 @@ import {
 } from "@/lib/db/repository";
 import { StatusBadge } from "@/components/StatusBadge";
 import { AdminSyncButton } from "./AdminSyncButton";
+import { ManualEnrollmentManager } from "./ManualEnrollmentManager";
+import { WhatsAppGroupManager } from "./WhatsAppGroupManager";
+import { EnrollmentAdminList } from "./EnrollmentAdminList";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +123,15 @@ export default async function AdminPage() {
           </p>
         </div>
       </div>
+
+      {/* SECCIÓN NUEVA: INSCRIPCIONES MANUALES Y GESTIÓN DE COBROS */}
+      <ManualEnrollmentManager />
+
+      {/* SECCIÓN NUEVA: CONTROL Y SEGUIMIENTO DE INSCRIPCIONES */}
+      <EnrollmentAdminList initialEnrollments={enrollments} />
+
+      {/* SECCIÓN NUEVA: ADMINISTRACIÓN DE GRUPOS DE WHATSAPP OFICIALES */}
+      <WhatsAppGroupManager trainings={trainings as any} />
 
       {/* SECCIÓN: CATÁLOGO SINCRONIZADO Y ESTADOS EDITORIALES */}
       <section className="bg-white rounded-xl border border-daom-neutral-200 shadow-card overflow-hidden">

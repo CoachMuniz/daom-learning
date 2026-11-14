@@ -197,6 +197,32 @@ export async function getPricesForEdition(editionId: string, onlyActive = true):
   return await db.query<Price>(sql, params);
 }
 
+export async function getEditionById(editionId: string): Promise<TrainingEdition | null> {
+  const db = getDatabase();
+  const ed = await db.get<TrainingEdition>(`SELECT * FROM training_editions WHERE oferta_id = ?`, [editionId]);
+  if (!ed) return null;
+  ed.precios = await getPricesForEdition(ed.oferta_id, false);
+  return ed;
+}
+
+export async function updateEditionWhatsAppGroupUrl(editionId: string, whatsappGroupUrl: string | null): Promise<void> {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE training_editions SET whatsapp_group_url = ?, synced_at = ? WHERE oferta_id = ?`,
+    [whatsappGroupUrl ? whatsappGroupUrl.trim() : null, nowIso, editionId]
+  );
+}
+
+export async function updateTrainingWhatsAppGroupUrl(capacitacionId: string, whatsappGroupUrl: string | null): Promise<void> {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE training_editions SET whatsapp_group_url = ?, synced_at = ? WHERE capacitacion_id = ?`,
+    [whatsappGroupUrl ? whatsappGroupUrl.trim() : null, nowIso, capacitacionId]
+  );
+}
+
 export async function getVerifiedInstructors(): Promise<Instructor[]> {
   const db = getDatabase();
   const sql = `
@@ -326,6 +352,37 @@ export async function findUserById(id: string): Promise<User | null> {
     [user.id]
   );
   return user;
+}
+
+export async function searchParticipants(query: string, limit = 20): Promise<User[]> {
+  const db = getDatabase();
+  const clean = query.trim();
+  if (!clean) {
+    const rows = await db.query<User>(
+      `SELECT u.* FROM users u
+       LEFT JOIN profiles p ON u.id = p.user_id
+       ORDER BY u.created_at DESC LIMIT ?`,
+      [limit]
+    );
+    for (const u of rows) {
+      u.profile = (await db.get<Profile>(`SELECT * FROM profiles WHERE user_id = ?`, [u.id])) ?? undefined;
+    }
+    return rows;
+  }
+
+  const term = `%${clean}%`;
+  const rows = await db.query<User>(
+    `SELECT DISTINCT u.* FROM users u
+     LEFT JOIN profiles p ON u.id = p.user_id
+     WHERE u.email LIKE ? OR u.full_name LIKE ? OR p.phone LIKE ? OR p.document_id LIKE ?
+     ORDER BY u.full_name ASC LIMIT ?`,
+    [term, term, term, term, limit]
+  );
+
+  for (const u of rows) {
+    u.profile = (await db.get<Profile>(`SELECT * FROM profiles WHERE user_id = ?`, [u.id])) ?? undefined;
+  }
+  return rows;
 }
 
 export async function findIdentityByProvider(
@@ -607,6 +664,14 @@ export async function getEnrollmentById(id: string): Promise<Enrollment | null> 
   }
   enr.user = (await findUserById(enr.user_id)) ?? undefined;
   return enr;
+}
+
+export async function getPaymentsForEnrollment(enrollmentId: string): Promise<PaymentRecord[]> {
+  const db = getDatabase();
+  return await db.query<PaymentRecord>(
+    `SELECT * FROM payment_records WHERE enrollment_id = ? ORDER BY created_at DESC`,
+    [enrollmentId]
+  );
 }
 
 export async function getUserEnrollments(userId: string): Promise<Enrollment[]> {

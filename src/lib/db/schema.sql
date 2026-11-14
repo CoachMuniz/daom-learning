@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS training_editions (
   fecha_despublicacion TEXT,
   fuente_url TEXT,
   verificacion TEXT NOT NULL DEFAULT 'pendiente',
+  whatsapp_group_url TEXT,
   synced_at TEXT NOT NULL
 );
 
