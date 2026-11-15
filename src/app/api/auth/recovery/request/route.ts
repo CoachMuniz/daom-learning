@@ -11,12 +11,54 @@ const RequestRecoverySchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const { getDatabase } = await import("@/lib/db/client");
-    const db = getDatabase();
-    const users = await db.query(
-      "SELECT id, email, full_name, role, is_active FROM users WHERE role = 'ADMIN' OR LOWER(email) = 'daom.weightlifting@gmail.com'"
-    );
-    return NextResponse.json({ ok: true, admin_users: users });
+    const {
+      getAllTrainingsAdmin,
+      getAllInstructorsAdmin,
+      getAllEditorialControls,
+      getAllEnrollmentsAdmin,
+      getRecentSyncRuns,
+      getAuditLogs,
+    } = await import("@/lib/db/repository");
+
+    const diag: Record<string, any> = {};
+
+    try {
+      diag.trainings = (await getAllTrainingsAdmin()).length;
+    } catch (e: any) {
+      diag.trainings_error = e.message;
+    }
+
+    try {
+      diag.instructors = (await getAllInstructorsAdmin()).length;
+    } catch (e: any) {
+      diag.instructors_error = e.message;
+    }
+
+    try {
+      diag.editorial = (await getAllEditorialControls()).length;
+    } catch (e: any) {
+      diag.editorial_error = e.message;
+    }
+
+    try {
+      diag.enrollments = (await getAllEnrollmentsAdmin()).length;
+    } catch (e: any) {
+      diag.enrollments_error = e.message;
+    }
+
+    try {
+      diag.syncRuns = (await getRecentSyncRuns(5)).length;
+    } catch (e: any) {
+      diag.syncRuns_error = e.message;
+    }
+
+    try {
+      diag.auditLogs = (await getAuditLogs(15)).length;
+    } catch (e: any) {
+      diag.auditLogs_error = e.message;
+    }
+
+    return NextResponse.json({ ok: true, diag });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
   }
