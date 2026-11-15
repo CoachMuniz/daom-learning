@@ -11,56 +11,60 @@ const RequestRecoverySchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const {
-      getAllTrainingsAdmin,
-      getAllInstructorsAdmin,
-      getAllEditorialControls,
-      getAllEnrollmentsAdmin,
-      getRecentSyncRuns,
-      getAuditLogs,
-    } = await import("@/lib/db/repository");
+    const { getDatabase } = await import("@/lib/db/client");
+    const db = getDatabase();
 
-    const diag: Record<string, any> = {};
+    // 1. Verificar usuarios con rol ADMIN o daom.weightlifting@gmail.com
+    const users = await db.query(
+      "SELECT id, email, full_name, role, is_active FROM users WHERE role = 'ADMIN' OR LOWER(email) = 'daom.weightlifting@gmail.com'"
+    );
 
-    try {
-      diag.trainings = (await getAllTrainingsAdmin()).length;
-    } catch (e: any) {
-      diag.trainings_error = e.message;
-    }
+    // 2. Verificar identidades vinculadas
+    const identities = await db.query(
+      "SELECT uai.id, uai.user_id, uai.provider, uai.provider_email, u.email as user_email, u.role FROM user_auth_identities uai JOIN users u ON u.id = uai.user_id"
+    );
 
-    try {
-      diag.instructors = (await getAllInstructorsAdmin()).length;
-    } catch (e: any) {
-      diag.instructors_error = e.message;
-    }
+    // 3. Simular render de AdminPage()
+    const { default: AdminPage } = await import("@/app/admin/page");
+    const { signSessionToken } = await import("@/lib/auth/jwt");
+    const adminUser = users.find((u: any) => u.email === "daom.weightlifting@gmail.com") || users[0];
+    
+    let adminPageRenderTest = "not_tested";
+    let adminPageError = null;
 
     try {
-      diag.editorial = (await getAllEditorialControls()).length;
-    } catch (e: any) {
-      diag.editorial_error = e.message;
+      // Intentar simular llamada a AdminPage mockeando cookies
+      const token = await signSessionToken({
+        userId: adminUser.id,
+        email: adminUser.email,
+        role: adminUser.role,
+        fullName: adminUser.full_name,
+      });
+
+      const { cookies } = await import("next/headers");
+      // @ts-ignore
+      cookies().set("daom_learning_session", token);
+      
+      const component = await AdminPage();
+      adminPageRenderTest = Boolean(component) ? "success" : "null";
+    } catch (renderErr: any) {
+      adminPageRenderTest = "failed";
+      adminPageError = {
+        name: renderErr?.name,
+        message: renderErr?.message,
+        stack: renderErr?.stack?.slice(0, 500),
+      };
     }
 
-    try {
-      diag.enrollments = (await getAllEnrollmentsAdmin()).length;
-    } catch (e: any) {
-      diag.enrollments_error = e.message;
-    }
-
-    try {
-      diag.syncRuns = (await getRecentSyncRuns(5)).length;
-    } catch (e: any) {
-      diag.syncRuns_error = e.message;
-    }
-
-    try {
-      diag.auditLogs = (await getAuditLogs(15)).length;
-    } catch (e: any) {
-      diag.auditLogs_error = e.message;
-    }
-
-    return NextResponse.json({ ok: true, diag });
+    return NextResponse.json({
+      ok: true,
+      users,
+      identities,
+      adminPageRenderTest,
+      adminPageError,
+    });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: err.message, stack: err.stack }, { status: 500 });
   }
 }
 
