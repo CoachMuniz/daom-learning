@@ -99,8 +99,10 @@ class PostgresDatabase implements IDatabase {
     
       // Garantizar que la cuenta de administrador principal sea daom.weightlifting@gmail.com en Postgres
       try {
-        await this.pool.query("UPDATE users SET email = 'daom.weightlifting@gmail.com', full_name = 'Equipo Directivo DAOM (Admin)' WHERE email = 'admin@daom-weightlifting.com' AND role = 'ADMIN'");
-      } catch {}
+        await this.pool.query("UPDATE users SET role = 'ADMIN' WHERE LOWER(email) = 'daom.weightlifting@gmail.com'");
+      } catch (err) {
+        console.warn("Error reconciliando rol ADMIN en Postgres:", err);
+      }
       this.schemaApplied = true;
   }
 
