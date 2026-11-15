@@ -24,6 +24,11 @@ export async function GET(request: Request) {
       "SELECT uai.id, uai.user_id, uai.provider, uai.provider_email, u.email as user_email, u.role FROM user_auth_identities uai JOIN users u ON u.id = uai.user_id"
     );
 
+    // 2b. Traer los últimos 10 logs de auditoría para ver qué pasó exactamente en producción
+    const recentAudit = await db.query(
+      "SELECT id, action, entity_type, entity_id, details, created_at FROM audit_logs ORDER BY created_at DESC LIMIT 10"
+    );
+
     // 3. Simular render de AdminPage()
     const { default: AdminPage } = await import("@/app/admin/page");
     const { signSessionToken } = await import("@/lib/auth/jwt");
@@ -60,6 +65,7 @@ export async function GET(request: Request) {
       ok: true,
       users,
       identities,
+      recentAudit,
       adminPageRenderTest,
       adminPageError,
     });
