@@ -374,7 +374,7 @@ export function ManualEnrollmentManager() {
                 required
               >
                 <option value="presencial">Presencial (Sede Club DAOM)</option>
-                <option value="streaming">Streaming en Vivo (Zoom)</option>
+                <option value="streaming">Streaming en Vivo (Google Meet)</option>
                 <option value="on_demand">On Demand (Grabación + ZIP)</option>
               </select>
             </div>

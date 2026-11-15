@@ -1164,3 +1164,433 @@ export async function listIntegrationEvents(options?: {
 
   return await db.query<IntegrationEvent>(query, params);
 }
+
+// ==============================================================================
+// 9. Gestión Administrativa Avanzada y Limpieza Quirúrgica (DAOM-LEARNING-CLEANUP-01)
+// ==============================================================================
+
+export async function updateParticipantAdmin(
+  userId: string,
+  data: {
+    fullName?: string;
+    phone?: string;
+    documentId?: string;
+    country?: string;
+    isActive?: boolean | number;
+  }
+): Promise<User | null> {
+  const db = getDatabase();
+  const user = await findUserById(userId);
+  if (!user) return null;
+
+  const nowIso = new Date().toISOString();
+
+  if (data.fullName !== undefined || data.isActive !== undefined) {
+    const isActiveVal = data.isActive !== undefined ? (data.isActive ? 1 : 0) : user.is_active;
+    const fullNameVal = data.fullName !== undefined ? data.fullName.trim() : user.full_name;
+    await db.run(
+      `UPDATE users SET full_name = ?, is_active = ?, updated_at = ? WHERE id = ?`,
+      [fullNameVal, isActiveVal, nowIso, userId]
+    );
+  }
+
+  if (data.phone !== undefined || data.documentId !== undefined || data.country !== undefined) {
+    await db.run(
+      `UPDATE profiles SET
+        phone = COALESCE(?, phone),
+        document_id = COALESCE(?, document_id),
+        country = COALESCE(?, country),
+        updated_at = ?
+       WHERE user_id = ?`,
+      [
+        data.phone !== undefined ? data.phone.trim() : null,
+        data.documentId !== undefined ? data.documentId.trim() : null,
+        data.country !== undefined ? data.country.trim() : null,
+        nowIso,
+        userId,
+      ]
+    );
+  }
+
+  await recordAuditLog({
+    action: "PARTICIPANT_UPDATED",
+    entityType: "user",
+    entityId: userId,
+    details: { changes: data },
+  });
+
+  return await findUserById(userId);
+}
+
+export async function deleteParticipantAdmin(userId: string): Promise<{ success: boolean; reason?: string }> {
+  const db = getDatabase();
+  const user = await findUserById(userId);
+  if (!user) {
+    return { success: false, reason: "Usuario no encontrado" };
+  }
+
+  // Protección inquebrantable de administradores institucionales
+  if (user.role === "ADMIN" || user.email === "daom.weightlifting@gmail.com" || user.email === "admin@daom-weightlifting.com") {
+    return { success: false, reason: "No es posible eliminar una cuenta administrativa institucional protegida." };
+  }
+
+  // Verificar si tiene actividad operativa legítima (pagos confirmados, asistencias, certificados)
+  const paymentsCount = await db.get<{ count: number }>(
+    `SELECT COUNT(*) as count FROM payment_records pr
+     JOIN enrollments e ON pr.enrollment_id = e.id
+     WHERE e.user_id = ? AND pr.status = 'approved'`,
+    [userId]
+  );
+
+  const certificatesCount = await db.get<{ count: number }>(
+    `SELECT COUNT(*) as count FROM certificates WHERE user_id = ?`,
+    [userId]
+  );
+
+  const attendanceCount = await db.get<{ count: number }>(
+    `SELECT COUNT(*) as count FROM attendance_records WHERE user_id = ? AND attended = 1`,
+    [userId]
+  );
+
+  const totalLegitActivity = (paymentsCount?.count || 0) + (certificatesCount?.count || 0) + (attendanceCount?.count || 0);
+
+  if (totalLegitActivity > 0) {
+    // Si tiene actividad legítima, no se destruye: se desactiva (archivado)
+    await db.run(`UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?`, [new Date().toISOString(), userId]);
+    await recordAuditLog({
+      action: "PARTICIPANT_DEACTIVATED_DUE_TO_ACTIVITY",
+      entityType: "user",
+      entityId: userId,
+      details: {
+        reason: "El usuario cuenta con pagos, asistencia o certificados. Se procedió a desactivar / archivar.",
+        approvedPayments: paymentsCount?.count || 0,
+        certificates: certificatesCount?.count || 0,
+      },
+    });
+    return {
+      success: true,
+      reason: "El usuario posee historial operativo legítimo. Se ha desactivado y archivado de forma segura sin destruir su trazabilidad.",
+    };
+  }
+
+  // Si no tiene actividad legítima (ej: usuario de prueba o sin pagos), se eliminan dependencias y el usuario
+  await db.run(`DELETE FROM material_entitlements WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM attendance_records WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM certificates WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM user_auth_identities WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM profiles WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM enrollments WHERE user_id = ?`, [userId]);
+  await db.run(`DELETE FROM users WHERE id = ?`, [userId]);
+
+  await recordAuditLog({
+    action: "PARTICIPANT_PERMANENTLY_DELETED",
+    entityType: "user",
+    entityId: userId,
+    details: { email: user.email, fullName: user.full_name },
+  });
+
+  return { success: true, reason: "Usuario y registros asociados eliminados definitivamente." };
+}
+
+export async function updateEnrollmentAdmin(
+  enrollmentId: string,
+  data: {
+    modalityId?: ModalityId;
+    status?: "pendiente_pago" | "confirmada" | "cancelada" | "reembolsada" | "en_espera";
+    notes?: string;
+    amountPaid?: number;
+  }
+): Promise<Enrollment | null> {
+  const db = getDatabase();
+  const enr = await getEnrollmentById(enrollmentId);
+  if (!enr) return null;
+
+  const nowIso = new Date().toISOString();
+  const modalityId = data.modalityId || enr.modality_id;
+  const status = data.status || enr.status;
+  const notes = data.notes !== undefined ? data.notes : enr.notes;
+  const amountPaid = data.amountPaid !== undefined ? data.amountPaid : enr.amount_paid;
+
+  await db.run(
+    `UPDATE enrollments SET
+      modality_id = ?,
+      status = ?,
+      notes = ?,
+      amount_paid = ?,
+      updated_at = ?
+     WHERE id = ?`,
+    [modalityId, status, notes, amountPaid, nowIso, enrollmentId]
+  );
+
+  // Si pasa a confirmada y no tenía materiales, auto otorgar
+  if (status === "confirmada" && enr.status !== "confirmada") {
+    await autoGrantMaterialForEnrollment(enr.user_id, enr.capacitacion_id, enr.id);
+  }
+
+  await recordAuditLog({
+    action: "ENROLLMENT_ADMIN_UPDATED",
+    entityType: "enrollment",
+    entityId: enrollmentId,
+    details: { previousStatus: enr.status, newStatus: status, changes: data },
+  });
+
+  return await getEnrollmentById(enrollmentId);
+}
+
+export async function deleteEnrollmentAdmin(enrollmentId: string): Promise<{ success: boolean; reason?: string }> {
+  const db = getDatabase();
+  const enr = await getEnrollmentById(enrollmentId);
+  if (!enr) {
+    return { success: false, reason: "Inscripción no encontrada." };
+  }
+
+  // Verificar si tiene pagos aprobados por pasarelas externas
+  const payments = await getPaymentsForEnrollment(enrollmentId);
+  const approvedPayments = payments.filter((p) => p.status === "approved");
+
+  if (approvedPayments.length > 0) {
+    // Si tiene pagos aprobados, no se borra físicamente: se cancela y se registra auditoría
+    await db.run(`UPDATE enrollments SET status = 'cancelada', updated_at = ? WHERE id = ?`, [
+      new Date().toISOString(),
+      enrollmentId,
+    ]);
+    await recordAuditLog({
+      action: "ENROLLMENT_CANCELLED_PRESERVING_PAYMENT",
+      entityType: "enrollment",
+      entityId: enrollmentId,
+      details: {
+        reason: "La inscripción posee cobros registrados y aprobados. Se marcó como cancelada preservando trazabilidad contable.",
+        approvedPaymentsCount: approvedPayments.length,
+      },
+    });
+    return {
+      success: true,
+      reason: "La inscripción posee pagos aprobados registrados. Se canceló preservando la auditoría contable.",
+    };
+  }
+
+  // Si no tiene cobros reales aprobados (ej: prueba, pendiente o cancelada sin fondos), se elimina
+  await db.run(`DELETE FROM material_entitlements WHERE enrollment_id = ?`, [enrollmentId]);
+  await db.run(`DELETE FROM payment_records WHERE enrollment_id = ?`, [enrollmentId]);
+  await db.run(`DELETE FROM attendance_records WHERE enrollment_id = ?`, [enrollmentId]);
+  await db.run(`DELETE FROM certificates WHERE enrollment_id = ?`, [enrollmentId]);
+  await db.run(`DELETE FROM enrollments WHERE id = ?`, [enrollmentId]);
+
+  await recordAuditLog({
+    action: "ENROLLMENT_PERMANENTLY_DELETED",
+    entityType: "enrollment",
+    entityId: enrollmentId,
+    details: { userId: enr.user_id, capacitacionId: enr.capacitacion_id },
+  });
+
+  return { success: true, reason: "Inscripción eliminada correctamente." };
+}
+
+export async function deleteTrainingAdmin(capacitacionId: string): Promise<{ success: boolean; reason?: string }> {
+  const db = getDatabase();
+  const training = await getTrainingById(capacitacionId, true);
+  if (!training) {
+    return { success: false, reason: "Capacitación no encontrada." };
+  }
+
+  // Verificar si tiene inscripciones vinculadas
+  const enrollmentsCount = await db.get<{ count: number }>(
+    `SELECT COUNT(*) as count FROM enrollments WHERE capacitacion_id = ?`,
+    [capacitacionId]
+  );
+
+  if ((enrollmentsCount?.count || 0) > 0) {
+    // Si tiene inscripciones, se archiva
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `UPDATE trainings SET estado_editorial = 'archivado', synced_at = ? WHERE capacitacion_id = ?`,
+      [nowIso, capacitacionId]
+    );
+    await db.run(
+      `UPDATE training_editions SET estado_editorial = 'archivado', synced_at = ? WHERE capacitacion_id = ?`,
+      [nowIso, capacitacionId]
+    );
+    await recordAuditLog({
+      action: "TRAINING_ARCHIVED_DUE_TO_ACTIVITY",
+      entityType: "training",
+      entityId: capacitacionId,
+      details: { enrollmentsCount: enrollmentsCount?.count },
+    });
+    return {
+      success: true,
+      reason: "La capacitación cuenta con inscripciones activas o históricas. Se procedió a archivarla sin destruir el catálogo de los alumnos.",
+    };
+  }
+
+  // Si es una capacitación de prueba sin inscripciones, se elimina
+  await db.run(`DELETE FROM prices WHERE oferta_id IN (SELECT oferta_id FROM training_editions WHERE capacitacion_id = ?)`, [capacitacionId]);
+  await db.run(`DELETE FROM training_instructors WHERE capacitacion_id = ?`, [capacitacionId]);
+  await db.run(`DELETE FROM material_assets WHERE capacitacion_id = ?`, [capacitacionId]);
+  await db.run(`DELETE FROM training_editions WHERE capacitacion_id = ?`, [capacitacionId]);
+  await db.run(`DELETE FROM trainings WHERE capacitacion_id = ?`, [capacitacionId]);
+
+  await recordAuditLog({
+    action: "TRAINING_PERMANENTLY_DELETED",
+    entityType: "training",
+    entityId: capacitacionId,
+    details: { titulo: training.titulo },
+  });
+
+  return { success: true, reason: "Capacitación de prueba eliminada definitivamente." };
+}
+
+export async function executeProductionCleanup(): Promise<{
+  backupSummary: any;
+  purgedCounts: {
+    users: number;
+    enrollments: number;
+    payments: number;
+    entitlements: number;
+    certificates: number;
+    events: number;
+  };
+  preservedAdmins: string[];
+}> {
+  const db = getDatabase();
+
+  // 1. Identificar registros ficticios y de prueba
+  // Patrones claros de prueba:
+  // - Correos con @daom-test.com, @test.com, alumno_existente_, atleta_test, atleta.staging, mp.test, fake_, intruder_
+  // - Inscripciones en capacitaciones de prueba (MP-TEST-TRAINING, SEM-TEST-ZIP, test-course)
+  // - Pagos con external_payment_id que inician con 'TEST-', 'PAY-BOT-', 'DEV-' o en enrollments de prueba
+  // - Entitlements asociados a usuarios o inscripciones de prueba
+  // - Certificados asociados a inscripciones de prueba
+
+  // Resumen previo para backup / auditoría
+  const testUsers = await db.query<{ id: string; email: string; full_name: string }>(
+    `SELECT id, email, full_name FROM users
+     WHERE (
+       email LIKE '%@daom-test.com'
+       OR email LIKE '%@test.com'
+       OR email LIKE 'alumno_existente_%'
+       OR email LIKE 'atleta_test_%'
+       OR email LIKE 'atleta.staging%'
+       OR email LIKE 'fake_%'
+       OR email LIKE 'intruder_%'
+       OR email LIKE 'test_user_%'
+     )
+     AND role = 'PARTICIPANT'
+     AND email NOT IN ('daom.weightlifting@gmail.com', 'admin@daom-weightlifting.com')`
+  );
+
+  const testUserIds = testUsers.map((u) => u.id);
+
+  const testTrainings = await db.query<{ capacitacion_id: string }>(
+    `SELECT capacitacion_id FROM trainings
+     WHERE capacitacion_id LIKE 'MP-TEST%'
+        OR capacitacion_id LIKE 'SEM-TEST%'
+        OR capacitacion_id LIKE 'TEST-%'`
+  );
+  const testCapacitacionIds = testTrainings.map((t) => t.capacitacion_id);
+
+  // Inscripciones ficticias: o del usuario de prueba o de capacitaciones de prueba
+  const testEnrollments = await db.query<{ id: string }>(
+    `SELECT id FROM enrollments
+     WHERE user_id IN (${testUserIds.length ? testUserIds.map(() => "?").join(",") : "''"})
+        OR capacitacion_id IN (${testCapacitacionIds.length ? testCapacitacionIds.map(() => "?").join(",") : "''"})
+        OR id LIKE 'ENR-TEST%'`,
+    [...testUserIds, ...testCapacitacionIds]
+  );
+  const testEnrollmentIds = testEnrollments.map((e) => e.id);
+
+  // Backup summary
+  const backupSummary = {
+    timestamp: new Date().toISOString(),
+    identifiedTestUsers: testUsers.length,
+    identifiedTestEnrollments: testEnrollments.length,
+    identifiedTestCapacitaciones: testTrainings.length,
+    sampleUsers: testUsers.slice(0, 10).map((u) => u.email),
+  };
+
+  // Purgar de manera segura respetando integridad referencial
+  let deletedEntitlements = 0;
+  let deletedCertificates = 0;
+  let deletedPayments = 0;
+  let deletedEvents = 0;
+  let deletedEnrollments = 0;
+  let deletedUsers = 0;
+
+  if (testEnrollmentIds.length > 0) {
+    const enrPlaceholders = testEnrollmentIds.map(() => "?").join(",");
+    const resCert = await db.run(`DELETE FROM certificates WHERE enrollment_id IN (${enrPlaceholders})`, testEnrollmentIds);
+    deletedCertificates = resCert.changes;
+
+    const resEnt = await db.run(`DELETE FROM material_entitlements WHERE enrollment_id IN (${enrPlaceholders})`, testEnrollmentIds);
+    deletedEntitlements = resEnt.changes;
+
+    const resPay = await db.run(`DELETE FROM payment_records WHERE enrollment_id IN (${enrPlaceholders})`, testEnrollmentIds);
+    deletedPayments = resPay.changes;
+
+    await db.run(`DELETE FROM attendance_records WHERE enrollment_id IN (${enrPlaceholders})`, testEnrollmentIds);
+
+    const resEnr = await db.run(`DELETE FROM enrollments WHERE id IN (${enrPlaceholders})`, testEnrollmentIds);
+    deletedEnrollments = resEnr.changes;
+  }
+
+  // Purgar eventos de integración ficticios
+  const resEvt = await db.run(
+    `DELETE FROM integration_events
+     WHERE idempotency_key LIKE 'TEST-%'
+        OR idempotency_key LIKE 'test-%'
+        OR source = 'vitest'
+        OR payload LIKE '%@daom-test.com%'`
+  );
+  deletedEvents = resEvt.changes;
+
+  // Purgar usuarios de prueba
+  if (testUserIds.length > 0) {
+    const userPlaceholders = testUserIds.map(() => "?").join(",");
+    await db.run(`DELETE FROM profiles WHERE user_id IN (${userPlaceholders})`, testUserIds);
+    await db.run(`DELETE FROM user_auth_identities WHERE user_id IN (${userPlaceholders})`, testUserIds);
+    await db.run(`DELETE FROM material_entitlements WHERE user_id IN (${userPlaceholders})`, testUserIds);
+    await db.run(`DELETE FROM attendance_records WHERE user_id IN (${userPlaceholders})`, testUserIds);
+    await db.run(`DELETE FROM certificates WHERE user_id IN (${userPlaceholders})`, testUserIds);
+    const resUsers = await db.run(`DELETE FROM users WHERE id IN (${userPlaceholders})`, testUserIds);
+    deletedUsers = resUsers.changes;
+  }
+
+  // Purgar capacitaciones de prueba
+  for (const capId of testCapacitacionIds) {
+    await deleteTrainingAdmin(capId);
+  }
+
+  // Comprobar administradores preservados
+  const admins = await db.query<{ email: string; role: string }>(
+    `SELECT email, role FROM users WHERE role = 'ADMIN'`
+  );
+
+  await recordAuditLog({
+    action: "PRODUCTION_CLEANUP_EXECUTED",
+    entityType: "system",
+    entityId: "DAOM-LEARNING-CLEANUP",
+    details: {
+      purged: {
+        users: deletedUsers,
+        enrollments: deletedEnrollments,
+        payments: deletedPayments,
+        entitlements: deletedEntitlements,
+        certificates: deletedCertificates,
+        events: deletedEvents,
+      },
+      preservedAdmins: admins.map((a) => a.email),
+    },
+  });
+
+  return {
+    backupSummary,
+    purgedCounts: {
+      users: deletedUsers,
+      enrollments: deletedEnrollments,
+      payments: deletedPayments,
+      entitlements: deletedEntitlements,
+      certificates: deletedCertificates,
+      events: deletedEvents,
+    },
+    preservedAdmins: admins.map((a) => a.email),
+  };
+}

@@ -22,6 +22,7 @@ import { AdminSyncButton } from "./AdminSyncButton";
 import { ManualEnrollmentManager } from "./ManualEnrollmentManager";
 import { WhatsAppGroupManager } from "./WhatsAppGroupManager";
 import { EnrollmentAdminList } from "./EnrollmentAdminList";
+import { ParticipantAdminManager } from "./ParticipantAdminManager";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +132,9 @@ export default async function AdminPage() {
 
       {/* SECCIÓN NUEVA: CONTROL Y SEGUIMIENTO DE INSCRIPCIONES */}
       <EnrollmentAdminList initialEnrollments={enrollments} />
+
+      {/* SECCIÓN NUEVA: GESTIÓN DE PARTICIPANTES */}
+      <ParticipantAdminManager />
 
       {/* SECCIÓN NUEVA: ADMINISTRACIÓN DE GRUPOS DE WHATSAPP OFICIALES */}
       <WhatsAppGroupManager trainings={trainings as any} />
