@@ -50,7 +50,7 @@ function RecuperarPasswordContent() {
         throw new Error(data.message || "Error al solicitar enlace de recuperación");
       }
       setMessage(
-        "Si el correo se encuentra registrado, recibirás un enlace de acceso temporal para definir tu nueva contraseña."
+        "Si el correo se encuentra registrado, recibirás un enlace de acceso temporal para definir tu nueva contraseña. Por favor revisá tu bandeja de entrada y la carpeta de correo no deseado (Spam)."
       );
       if (data.debug_recovery_link) {
         console.log("[Recuperación Dev Link]", data.debug_recovery_link);

@@ -39,6 +39,10 @@ services:
         sync: false
       - key: MERCADOPAGO_WEBHOOK_SECRET
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: DAOM Learning <capacitaciones@daom-weightlifting.com>
 
 databases:
   - name: daom-learning-db

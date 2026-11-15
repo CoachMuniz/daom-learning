@@ -13,7 +13,7 @@ import { issuePasswordRecoveryToken } from "../src/lib/auth/passwords";
 import { getDatabase } from "../src/lib/db/client";
 
 async function main() {
-  const target = process.argv[2] || "admin@daom-weightlifting.com";
+  const target = process.argv[2] || "daom.weightlifting@gmail.com";
   console.log(`[DAOM Learning] Generando token de recuperación administrativa para: ${target}...`);
 
   const db = getDatabase();

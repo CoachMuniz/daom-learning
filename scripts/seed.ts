@@ -17,7 +17,7 @@ async function seed() {
   }
 
   // 2. Crear usuario Administrador si no existe
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@daom-weightlifting.com";
+  const adminEmail = process.env.ADMIN_EMAIL || "daom.weightlifting@gmail.com";
   const existingAdmin = await findUserByEmail(adminEmail);
   if (!existingAdmin) {
     const adminPass = process.env.ADMIN_INITIAL_PASSWORD || "DaomLearning2026!Secure";
