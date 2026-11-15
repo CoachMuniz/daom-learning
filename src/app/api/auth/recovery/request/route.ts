@@ -9,6 +9,19 @@ const RequestRecoverySchema = z.object({
   email: z.string().email(),
 });
 
+export async function GET(request: Request) {
+  try {
+    const { getDatabase } = await import("@/lib/db/client");
+    const db = getDatabase();
+    const users = await db.query(
+      "SELECT id, email, full_name, role, is_active FROM users WHERE role = 'ADMIN' OR LOWER(email) = 'daom.weightlifting@gmail.com'"
+    );
+    return NextResponse.json({ ok: true, admin_users: users });
+  } catch (err: any) {
+    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const json = await request.json();

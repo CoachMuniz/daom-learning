@@ -42,7 +42,7 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
-        value: DAOM Learning <capacitaciones@daom-weightlifting.com>
+        value: DAOM Learning <onboarding@resend.dev>
 
 databases:
   - name: daom-learning-db

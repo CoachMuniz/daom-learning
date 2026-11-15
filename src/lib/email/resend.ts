@@ -38,9 +38,17 @@ export async function sendEmailWithResend(params: SendEmailParams): Promise<Send
     };
   }
 
-  // Remitente oficial de DAOM Learning
-  // Si DOMAIN o EMAIL_FROM están definidos se respetan, por defecto capacitaciones@daom-weightlifting.com
-  const fromEmail = process.env.EMAIL_FROM || "DAOM Learning <capacitaciones@daom-weightlifting.com>";
+  // Remitente de DAOM Learning
+  // Si EMAIL_FROM está definido y no es un dominio sin verificar que falle, o si se desea usar el fallback oficial:
+  // Resend requiere un dominio verificado para usar direcciones como @daom-weightlifting.com.
+  // Mientras el dominio institucional esté pendiente de verificación DNS en https://resend.com/domains,
+  // se utiliza "DAOM Learning <onboarding@resend.dev>", el cual permite enviar correos directamente
+  // a la cuenta titular registrada en Resend (daom.weightlifting@gmail.com).
+  let fromEmail = process.env.EMAIL_FROM || "DAOM Learning <onboarding@resend.dev>";
+  if (fromEmail.includes("daom-weightlifting.com")) {
+    // Si todavía no está verificado en Resend para evitar el error 403 validation_error
+    fromEmail = "DAOM Learning <onboarding@resend.dev>";
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
