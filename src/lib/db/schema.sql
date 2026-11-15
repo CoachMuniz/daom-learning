@@ -379,3 +379,25 @@ CREATE TABLE IF NOT EXISTS password_recovery_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_recovery_tokens_user ON password_recovery_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_recovery_tokens_hash ON password_recovery_tokens(token_hash);
+
+-- 23. Becas Institucionales (DAOM-LEARNING-ADMIN-2.0 / Inmutables)
+CREATE TABLE IF NOT EXISTS scholarships (
+  id TEXT PRIMARY KEY,
+  enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id),
+  oferta_id TEXT REFERENCES training_editions(oferta_id),
+  percentage NUMERIC NOT NULL, -- Porcentaje 1 a 100
+  original_amount NUMERIC NOT NULL,
+  discounted_amount NUMERIC NOT NULL,
+  remaining_amount NUMERIC NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'ARS',
+  granted_by TEXT NOT NULL, -- Admin email or ID
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(enrollment_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_scholarships_user ON scholarships(user_id);
+CREATE INDEX IF NOT EXISTS idx_scholarships_enrollment ON scholarships(enrollment_id);
+CREATE INDEX IF NOT EXISTS idx_scholarships_capacitacion ON scholarships(capacitacion_id);

@@ -35,6 +35,7 @@ export async function GET() {
             modalidades: e.modalidades,
             fecha_inicio: e.fecha_inicio,
             whatsapp_group_url: e.whatsapp_group_url || null,
+            google_meet_url: (e as any).google_meet_url || null,
             precios: e.precios || [],
           })),
         })),

@@ -12,14 +12,16 @@ import {
   Trash2,
   Ban,
   Check,
+  Award,
 } from "lucide-react";
 import type { Enrollment } from "@/lib/types";
 
 interface EnrollmentListProps {
   initialEnrollments: Enrollment[];
+  onBecarEnrollment?: (enrollment: Enrollment) => void;
 }
 
-export function EnrollmentAdminList({ initialEnrollments }: EnrollmentListProps) {
+export function EnrollmentAdminList({ initialEnrollments, onBecarEnrollment }: EnrollmentListProps) {
   const [enrollments, setEnrollments] = useState<Enrollment[]>(initialEnrollments);
   const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
   const [paymentsDetail, setPaymentsDetail] = useState<any[]>([]);
@@ -290,6 +292,16 @@ export function EnrollmentAdminList({ initialEnrollments }: EnrollmentListProps)
                   </td>
                   <td className="p-3 text-right">
                     <div className="inline-flex items-center gap-1">
+                      {onBecarEnrollment && (
+                        <button
+                          onClick={() => onBecarEnrollment(e)}
+                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                          title="Otorgar Beca a esta inscripción"
+                        >
+                          <Award className="w-3 h-3 text-amber-600" />
+                          <span>Becar</span>
+                        </button>
+                      )}
                       {e.status === "pendiente_pago" && (
                         <button
                           onClick={() => openConfirmModal(e)}

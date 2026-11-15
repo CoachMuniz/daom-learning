@@ -103,6 +103,14 @@ class PostgresDatabase implements IDatabase {
       } catch (err) {
         console.warn("Error reconciliando rol ADMIN en Postgres:", err);
       }
+
+      // Garantizar columna google_meet_url en Postgres
+      try {
+        await this.pool.query("ALTER TABLE training_editions ADD COLUMN IF NOT EXISTS google_meet_url TEXT");
+      } catch (err) {
+        // Ignorar si ya existe
+      }
+
       this.schemaApplied = true;
   }
 
@@ -229,6 +237,40 @@ class SqliteDatabase implements IDatabase {
             );
             CREATE INDEX IF NOT EXISTS idx_recovery_tokens_user ON password_recovery_tokens(user_id);
             CREATE INDEX IF NOT EXISTS idx_recovery_tokens_hash ON password_recovery_tokens(token_hash);
+          `);
+        } catch {}
+
+        // Garantizar columna google_meet_url en training_editions
+        try {
+          const editionCols = this.db.prepare("PRAGMA table_info(training_editions)").all();
+          const hasMeet = editionCols.some((c: any) => c.name === "google_meet_url");
+          if (!hasMeet) {
+            this.db.exec("ALTER TABLE training_editions ADD COLUMN google_meet_url TEXT");
+          }
+        } catch {}
+
+        // Garantizar tabla scholarships (DAOM-LEARNING-ADMIN-2.0)
+        try {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS scholarships (
+              id TEXT PRIMARY KEY,
+              enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id),
+              oferta_id TEXT REFERENCES training_editions(oferta_id),
+              percentage NUMERIC NOT NULL,
+              original_amount NUMERIC NOT NULL,
+              discounted_amount NUMERIC NOT NULL,
+              remaining_amount NUMERIC NOT NULL,
+              currency TEXT NOT NULL DEFAULT 'ARS',
+              granted_by TEXT NOT NULL,
+              reason TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(enrollment_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_scholarships_user ON scholarships(user_id);
+            CREATE INDEX IF NOT EXISTS idx_scholarships_enrollment ON scholarships(enrollment_id);
+            CREATE INDEX IF NOT EXISTS idx_scholarships_capacitacion ON scholarships(capacitacion_id);
           `);
         } catch {}
         this.schemaApplied = true;

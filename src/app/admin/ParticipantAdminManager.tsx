@@ -12,7 +12,10 @@ import {
   X,
   Check,
   Loader2,
+  Award,
+  BookOpen,
 } from "lucide-react";
+import type { Enrollment } from "@/lib/types";
 
 interface Participant {
   id: string;
@@ -25,7 +28,11 @@ interface Participant {
   isActive?: number | boolean;
 }
 
-export function ParticipantAdminManager() {
+interface ParticipantAdminManagerProps {
+  onBecarParticipant?: (participant: Participant) => void;
+}
+
+export function ParticipantAdminManager({ onBecarParticipant }: ParticipantAdminManagerProps = {}) {
   const [query, setQuery] = useState("");
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(false);
@@ -286,6 +293,16 @@ export function ParticipantAdminManager() {
                     <td className="p-3 text-right">
                       {!isAdmin && (
                         <div className="inline-flex items-center gap-1">
+                          {onBecarParticipant && (
+                            <button
+                              onClick={() => onBecarParticipant(p)}
+                              className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                              title="Otorgar Beca a este participante"
+                            >
+                              <Award className="w-3 h-3 text-amber-600" />
+                              <span>Becar</span>
+                            </button>
+                          )}
                           <button
                             onClick={() => openEditModal(p)}
                             className="p-1 hover:bg-daom-neutral-200 rounded text-daom-neutral-600 hover:text-daom-neutral-900"

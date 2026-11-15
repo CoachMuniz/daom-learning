@@ -84,6 +84,7 @@ export interface TrainingEdition {
   recording_available_at?: string | null;
   recording_status?: "pending" | "available" | "expired" | string | null;
   whatsapp_group_url?: string | null;
+  google_meet_url?: string | null;
 }
 
 export interface Price {
@@ -182,6 +183,25 @@ export interface PaymentRecord {
   created_at: string;
 }
 
+export interface Scholarship {
+  id: string;
+  enrollment_id: string;
+  user_id: string;
+  capacitacion_id: string;
+  oferta_id?: string | null;
+  percentage: number;
+  original_amount: number;
+  discounted_amount: number;
+  remaining_amount: number;
+  currency: CurrencyType;
+  granted_by: string;
+  reason?: string | null;
+  created_at: string;
+  user?: User;
+  training?: Training;
+  enrollment?: Enrollment;
+}
+
 export interface MaterialAsset {
   id: string;
   capacitacion_id: string;
@@ -251,8 +271,10 @@ export interface IntegrationEvent {
     | "certificate.linked"
     | "certificate.ready"
     | "modality_change.requested"
-    | "recording.available";
-  source: "bot" | "payment_gateway" | "admin_manual" | "system";
+    | "recording.available"
+    | "scholarship.granted.full"
+    | "scholarship.granted.partial";
+  source: "bot" | "payment_gateway" | "admin_manual" | "system" | "daom_learning_admin";
   payload: string;
   status: "processed" | "failed" | "ignored" | "pending";
   error_message?: string | null;

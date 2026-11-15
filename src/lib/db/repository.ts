@@ -16,6 +16,7 @@ import type {
   UserAuthIdentity,
   Enrollment,
   PaymentRecord,
+  Scholarship,
   MaterialAsset,
   MaterialEntitlement,
   AttendanceRecord,
@@ -220,6 +221,24 @@ export async function updateTrainingWhatsAppGroupUrl(capacitacionId: string, wha
   await db.run(
     `UPDATE training_editions SET whatsapp_group_url = ?, synced_at = ? WHERE capacitacion_id = ?`,
     [whatsappGroupUrl ? whatsappGroupUrl.trim() : null, nowIso, capacitacionId]
+  );
+}
+
+export async function updateEditionGoogleMeetUrl(editionId: string, meetUrl: string | null): Promise<void> {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE training_editions SET google_meet_url = ?, synced_at = ? WHERE oferta_id = ?`,
+    [meetUrl ? meetUrl.trim() : null, nowIso, editionId]
+  );
+}
+
+export async function updateTrainingGoogleMeetUrl(capacitacionId: string, meetUrl: string | null): Promise<void> {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE training_editions SET google_meet_url = ?, synced_at = ? WHERE capacitacion_id = ?`,
+    [meetUrl ? meetUrl.trim() : null, nowIso, capacitacionId]
   );
 }
 
@@ -704,6 +723,11 @@ export async function getAllEnrollmentsAdmin(filter?: { status?: string }): Prom
   for (const enr of rows) {
     enr.training = (await getTrainingById(enr.capacitacion_id, true)) ?? undefined;
     enr.user = (await findUserById(enr.user_id)) ?? undefined;
+    if (enr.oferta_id) {
+      enr.edition =
+        (await db.get<TrainingEdition>(`SELECT * FROM training_editions WHERE oferta_id = ?`, [enr.oferta_id])) ??
+        undefined;
+    }
   }
   return rows;
 }
@@ -763,6 +787,11 @@ export async function getPendingEnrollments(limit = 20): Promise<Enrollment[]> {
   for (const enr of rows) {
     enr.training = (await getTrainingById(enr.capacitacion_id, true)) ?? undefined;
     enr.user = (await findUserById(enr.user_id)) ?? undefined;
+    if (enr.oferta_id) {
+      enr.edition =
+        (await db.get<TrainingEdition>(`SELECT * FROM training_editions WHERE oferta_id = ?`, [enr.oferta_id])) ??
+        undefined;
+    }
   }
   return rows;
 }
@@ -1593,4 +1622,212 @@ export async function executeProductionCleanup(): Promise<{
     },
     preservedAdmins: admins.map((a) => a.email),
   };
+}
+
+// ==============================================================================
+// 10. Sistema de Becas Institucionales Inmutables (DAOM-LEARNING-ADMIN-2.0)
+// ==============================================================================
+
+export async function grantScholarship(data: {
+  enrollmentId: string;
+  percentage: number;
+  grantedBy: string;
+  reason?: string;
+}): Promise<Scholarship> {
+  const db = getDatabase();
+
+  // 1. Validar inscripción existente
+  const enrollment = await getEnrollmentById(data.enrollmentId);
+  if (!enrollment) {
+    throw new Error(`Inscripción no encontrada: ${data.enrollmentId}`);
+  }
+
+  // 2. Inmutabilidad estricta: No permitir becas duplicadas ni modificaciones
+  const existingScholarship = await db.get<Scholarship>(
+    `SELECT * FROM scholarships WHERE enrollment_id = ?`,
+    [data.enrollmentId]
+  );
+  if (existingScholarship) {
+    throw new Error(
+      `Esta inscripción ya cuenta con una beca otorgada del ${existingScholarship.percentage}%. Por decisión institucional definitiva, el porcentaje de una beca es inmutable y no puede modificarse ni duplicarse.`
+    );
+  }
+
+  // 3. Validar porcentaje (1 a 100)
+  const pct = Math.round(Number(data.percentage) * 100) / 100;
+  if (isNaN(pct) || pct < 1 || pct > 100) {
+    throw new Error("El porcentaje de beca debe ser un valor numérico entre 1 y 100.");
+  }
+
+  // 4. No permitir beca retroactiva sobre pago ya acreditado en su totalidad
+  if (enrollment.status === "confirmada" && enrollment.amount_paid >= enrollment.amount_total) {
+    throw new Error(
+      "No es posible otorgar una beca retroactiva sobre una inscripción que ya tiene el 100% del arancel cobrado y acreditado."
+    );
+  }
+
+  // 5. Aritmética decimal segura
+  const originalAmount = Number(enrollment.amount_total);
+  const discountedAmount = Math.round((originalAmount * pct) / 100);
+  const remainingAmount = Math.max(0, originalAmount - discountedAmount);
+
+  const scholarshipId = `SCH-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = new Date().toISOString();
+
+  await db.run(
+    `INSERT INTO scholarships (
+      id, enrollment_id, user_id, capacitacion_id, oferta_id,
+      percentage, original_amount, discounted_amount, remaining_amount,
+      currency, granted_by, reason, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      scholarshipId,
+      enrollment.id,
+      enrollment.user_id,
+      enrollment.capacitacion_id,
+      enrollment.oferta_id || null,
+      pct,
+      originalAmount,
+      discountedAmount,
+      remainingAmount,
+      enrollment.currency,
+      data.grantedBy,
+      data.reason || "Beca institucional otorgada",
+      nowIso,
+    ]
+  );
+
+  // 6. Impacto en la inscripción
+  if (pct === 100) {
+    // Beca completa (100%):
+    // Confirma la inscripción de inmediato, no requiere pago posterior, habilita materiales
+    await db.run(
+      `UPDATE enrollments SET
+        status = 'confirmada',
+        amount_paid = 0,
+        notes = COALESCE(notes || ' • ', '') || 'Beca institucional 100% concedida',
+        updated_at = ?
+       WHERE id = ?`,
+      [nowIso, enrollment.id]
+    );
+
+    // Habilitar de inmediato material educativo protegido
+    await autoGrantMaterialForEnrollment(enrollment.user_id, enrollment.capacitacion_id, enrollment.id);
+
+    // Registrar evento de integración para Jerkson (idempotente)
+    await recordIntegrationEvent({
+      idempotencyKey: `EVENT-SCHOLARSHIP-FULL-${enrollment.id}`,
+      eventType: "scholarship.granted.full",
+      source: "admin_manual",
+      payload: {
+        enrollmentId: enrollment.id,
+        userId: enrollment.user_id,
+        capacitacionId: enrollment.capacitacion_id,
+        ofertaId: enrollment.oferta_id,
+        percentage: 100,
+        originalAmount,
+        discountedAmount,
+        remainingAmount: 0,
+        currency: enrollment.currency,
+        isFullScholarship: true,
+        userEmail: enrollment.user?.email,
+        userName: enrollment.user?.full_name,
+      },
+    });
+  } else {
+    // Beca parcial (1% a 99%):
+    // Mantiene pendiente de pago, no habilita materiales aún, informa saldo restante
+    await db.run(
+      `UPDATE enrollments SET
+        notes = COALESCE(notes || ' • ', '') || 'Beca parcial ${pct}% concedida (Saldo restante: $${remainingAmount})',
+        updated_at = ?
+       WHERE id = ?`,
+      [nowIso, enrollment.id]
+    );
+
+    // Registrar evento de integración para Jerkson (idempotente)
+    await recordIntegrationEvent({
+      idempotencyKey: `EVENT-SCHOLARSHIP-PARTIAL-${enrollment.id}`,
+      eventType: "scholarship.granted.partial",
+      source: "admin_manual",
+      payload: {
+        enrollmentId: enrollment.id,
+        userId: enrollment.user_id,
+        capacitacionId: enrollment.capacitacion_id,
+        ofertaId: enrollment.oferta_id,
+        percentage: pct,
+        originalAmount,
+        discountedAmount,
+        remainingAmount,
+        currency: enrollment.currency,
+        isFullScholarship: false,
+        userEmail: enrollment.user?.email,
+        userName: enrollment.user?.full_name,
+      },
+    });
+  }
+
+  // 7. Registro de auditoría
+  await recordAuditLog({
+    action: "SCHOLARSHIP_GRANTED",
+    entityType: "scholarship",
+    entityId: scholarshipId,
+    details: {
+      enrollmentId: enrollment.id,
+      userId: enrollment.user_id,
+      capacitacionId: enrollment.capacitacion_id,
+      percentage: pct,
+      originalAmount,
+      discountedAmount,
+      remainingAmount,
+      grantedBy: data.grantedBy,
+    },
+  });
+
+  const created = await db.get<Scholarship>(`SELECT * FROM scholarships WHERE id = ?`, [scholarshipId]);
+  return created!;
+}
+
+export async function getAllScholarshipsAdmin(filter?: {
+  capacitacionId?: string;
+  userId?: string;
+}): Promise<Scholarship[]> {
+  const db = getDatabase();
+  let sql = `SELECT * FROM scholarships`;
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  if (filter?.capacitacionId) {
+    conditions.push(`capacitacion_id = ?`);
+    params.push(filter.capacitacionId);
+  }
+  if (filter?.userId) {
+    conditions.push(`user_id = ?`);
+    params.push(filter.userId);
+  }
+
+  if (conditions.length > 0) {
+    sql += ` WHERE ` + conditions.join(" AND ");
+  }
+
+  sql += ` ORDER BY created_at DESC`;
+  const rows = await db.query<Scholarship>(sql, params);
+
+  for (const s of rows) {
+    s.user = (await findUserById(s.user_id)) ?? undefined;
+    s.training = (await getTrainingById(s.capacitacion_id, true)) ?? undefined;
+    s.enrollment = (await getEnrollmentById(s.enrollment_id)) ?? undefined;
+  }
+
+  return rows;
+}
+
+export async function getScholarshipByEnrollmentId(enrollmentId: string): Promise<Scholarship | null> {
+  const db = getDatabase();
+  const s = await db.get<Scholarship>(`SELECT * FROM scholarships WHERE enrollment_id = ?`, [enrollmentId]);
+  if (!s) return null;
+  s.user = (await findUserById(s.user_id)) ?? undefined;
+  s.training = (await getTrainingById(s.capacitacion_id, true)) ?? undefined;
+  s.enrollment = (await getEnrollmentById(s.enrollment_id)) ?? undefined;
+  return s;
 }
