@@ -119,7 +119,9 @@ export default async function AdminPage() {
             )}
           </p>
           <p className="text-[11px] text-daom-neutral-400">
-            {syncRuns[0]?.completed_at ? new Date(syncRuns[0].completed_at).toLocaleTimeString() : "N/D"}
+            {syncRuns[0]?.completed_at
+              ? new Date(syncRuns[0].completed_at).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })
+              : "N/D"}
           </p>
         </div>
       </div>
@@ -274,17 +276,30 @@ export default async function AdminPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-daom-neutral-100">
-                {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-daom-neutral-50/50">
-                    <td className="p-2.5 text-daom-neutral-500 font-mono">
-                      {new Date(log.created_at).toLocaleString()}
-                    </td>
-                    <td className="p-2.5 font-bold text-daom-neutral-800">{log.action}</td>
-                    <td className="p-2.5 text-daom-neutral-500">{log.entity_type}</td>
-                    <td className="p-2.5 font-mono text-daom-neutral-700">{log.entity_id}</td>
-                    <td className="p-2.5 text-daom-neutral-600 truncate max-w-xs">{log.details || "—"}</td>
-                  </tr>
-                ))}
+                {auditLogs.map((log) => {
+                  let formattedDetails = "—";
+                  if (log.details) {
+                    formattedDetails =
+                      typeof log.details === "object"
+                        ? JSON.stringify(log.details)
+                        : String(log.details);
+                  }
+                  return (
+                    <tr key={log.id} className="hover:bg-daom-neutral-50/50">
+                      <td className="p-2.5 text-daom-neutral-500 font-mono">
+                        {new Date(log.created_at).toLocaleString("es-AR", {
+                          timeZone: "America/Argentina/Buenos_Aires",
+                        })}
+                      </td>
+                      <td className="p-2.5 font-bold text-daom-neutral-800">{log.action}</td>
+                      <td className="p-2.5 text-daom-neutral-500">{log.entity_type}</td>
+                      <td className="p-2.5 font-mono text-daom-neutral-700">{log.entity_id}</td>
+                      <td className="p-2.5 text-daom-neutral-600 truncate max-w-xs">
+                        {formattedDetails}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
