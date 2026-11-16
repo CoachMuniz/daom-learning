@@ -9,6 +9,7 @@
  */
 
 import { recordAuditLog, recordIntegrationEvent } from "@/lib/db/repository";
+import { getDatabase } from "@/lib/db/client";
 
 export interface GoogleCalendarEventOptions {
   title: string;
@@ -278,8 +279,108 @@ export async function removeParticipantFromCalendarEvent(
   }
 }
 
+export function getGoogleCalendarAuthUrl(redirectUri: string): string {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    throw new Error("GOOGLE_CLIENT_ID no está configurado.");
+  }
+
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "code");
+  // Scopes necesarios para administrar eventos y conferencias Meet
+  url.searchParams.set("scope", "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email");
+  url.searchParams.set("access_type", "offline");
+  url.searchParams.set("prompt", "consent"); // Garantiza la devolución del refresh_token
+  url.searchParams.set("state", "admin_gcal_auth");
+
+  return url.toString();
+}
+
+export async function exchangeCalendarCodeForRefreshToken(
+  code: string,
+  redirectUri: string
+): Promise<{ refreshToken: string; email?: string }> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error("Credenciales de Google OAuth (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) no configuradas.");
+  }
+
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.access_token) {
+    throw new Error(data.error_description || data.error || `Error canjeando código Google: ${res.status}`);
+  }
+
+  const refreshToken = data.refresh_token;
+
+  // Obtener el correo de la cuenta que autorizó
+  let email: string | undefined;
+  try {
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${data.access_token}` },
+    });
+    if (userRes.ok) {
+      const uData = await userRes.json();
+      email = uData.email;
+    }
+  } catch {}
+
+  // Guardar de forma segura y persistente en la base de datos (site_configs)
+  if (refreshToken) {
+    const db = getDatabase();
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `INSERT INTO site_configs (clave, valor, descripcion, tipo, publico, synced_at)
+       VALUES ('GOOGLE_CALENDAR_REFRESH_TOKEN', ?, 'OAuth Refresh Token para Google Calendar', 'secreto', 'NO', ?)
+       ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, synced_at = EXCLUDED.synced_at`,
+      [refreshToken, nowIso]
+    );
+
+    if (email) {
+      await db.run(
+        `INSERT INTO site_configs (clave, valor, descripcion, tipo, publico, synced_at)
+         VALUES ('GOOGLE_CALENDAR_AUTHORIZED_ACCOUNT', ?, 'Cuenta autorizada para Google Calendar', 'texto', 'NO', ?)
+         ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor, synced_at = EXCLUDED.synced_at`,
+        [email, nowIso]
+      );
+    }
+  }
+
+  return { refreshToken: refreshToken || "", email };
+}
+
+async function getStoredCalendarRefreshToken(): Promise<string | null> {
+  if (process.env.GOOGLE_CALENDAR_REFRESH_TOKEN) {
+    return process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
+  }
+  try {
+    const db = getDatabase();
+    const row = await db.get<{ valor: string }>(
+      `SELECT valor FROM site_configs WHERE clave = 'GOOGLE_CALENDAR_REFRESH_TOKEN'`
+    );
+    return row?.valor || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getGoogleCalendarAccessToken(): Promise<string> {
-  const refreshToken = process.env.GOOGLE_CALENDAR_REFRESH_TOKEN;
+  const refreshToken = await getStoredCalendarRefreshToken();
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
