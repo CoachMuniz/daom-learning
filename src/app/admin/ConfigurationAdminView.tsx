@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Video,
   MessageSquare,
@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Save,
   Loader2,
+  Calendar,
 } from "lucide-react";
 import type { Training } from "@/lib/types";
 
@@ -245,10 +246,27 @@ export function ConfigurationAdminView({ trainings }: ConfigAdminProps) {
 
       {/* Parámetros Institucionales e Integraciones */}
       <div className="bg-white p-6 rounded-xl border border-daom-neutral-200 shadow-card space-y-4">
-        <h4 className="font-bold text-daom-neutral-900 text-sm flex items-center gap-2">
-          <Globe className="w-4 h-4 text-daom-blue" />
-          <span>Parámetros Institucionales y Fuentes de Datos</span>
-        </h4>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-daom-neutral-200">
+          <div>
+            <h4 className="font-bold text-daom-neutral-900 text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-daom-blue" />
+              <span>Conexión Institucional — Google Calendar API</span>
+            </h4>
+            <p className="text-[11px] text-daom-neutral-500">
+              Permite invitar automáticamente por streaming a los alumnos a su calendario de Google e incorporar Google Meet a las sesiones.
+            </p>
+          </div>
+          <div>
+            <a
+              href="/api/admin/google-calendar/authorize"
+              className="px-4 py-2 bg-daom-blue hover:bg-daom-blue/90 text-white rounded-lg text-xs font-bold inline-flex items-center gap-1.5 shadow-sm transition-all"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Vincular Google Calendar con daom.weightlifting@gmail.com</span>
+            </a>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
           <div className="p-3 bg-daom-neutral-50 border rounded-lg space-y-1">
             <span className="text-daom-neutral-500 block">Canario del Sistema:</span>

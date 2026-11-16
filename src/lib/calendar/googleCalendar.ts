@@ -30,11 +30,11 @@ export interface GoogleCalendarEventResult {
   message?: string;
 }
 
-export function isGoogleCalendarConfigured(): boolean {
-  // Cuenta organizadora institucional: GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_SERVICE_ACCOUNT_KEY o OAuth token
+export async function isGoogleCalendarConfigured(): Promise<boolean> {
+  const token = await getStoredCalendarRefreshToken();
   return Boolean(
     process.env.GOOGLE_CALENDAR_SERVICE_ACCOUNT_EMAIL ||
-    (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CALENDAR_REFRESH_TOKEN) ||
+    (process.env.GOOGLE_CLIENT_ID && token) ||
     process.env.GOOGLE_CALENDAR_API_KEY
   );
 }
@@ -49,7 +49,8 @@ export async function createAcademicCalendarEvent(
 ): Promise<GoogleCalendarEventResult> {
   const timeZone = options.timeZone || "America/Argentina/Buenos_Aires";
 
-  if (!isGoogleCalendarConfigured()) {
+  const configured = await isGoogleCalendarConfigured();
+  if (!configured) {
     // Modo resiliencia institucional: cuando no hay credenciales de Workspace con delegación de dominio,
     // se genera una referencia determinista que previene caídas y deja asentada la necesidad de credenciales.
     const mockEventId = `gcal_${encuentroId.toLowerCase().replace(/[^a-z0-9]/g, "")}_${Date.now()}`;
@@ -162,7 +163,8 @@ export async function inviteParticipantToCalendarEvent(
   participantEmail: string,
   encuentroId: string
 ): Promise<{ success: boolean; message: string }> {
-  if (!isGoogleCalendarConfigured()) {
+  const configured = await isGoogleCalendarConfigured();
+  if (!configured) {
     return {
       success: true,
       message: `Invitación registrada para ${participantEmail}. Se sincronizará en Google Calendar una vez inyectadas las credenciales de Workspace.`,
@@ -234,7 +236,8 @@ export async function removeParticipantFromCalendarEvent(
   participantEmail: string,
   encuentroId: string
 ): Promise<{ success: boolean; message: string }> {
-  if (!isGoogleCalendarConfigured()) {
+  const configured = await isGoogleCalendarConfigured();
+  if (!configured) {
     return { success: true, message: "Participante revocado de la lista de invitaciones." };
   }
 
