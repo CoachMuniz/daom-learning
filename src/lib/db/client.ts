@@ -273,6 +273,108 @@ class SqliteDatabase implements IDatabase {
             CREATE INDEX IF NOT EXISTS idx_scholarships_capacitacion ON scholarships(capacitacion_id);
           `);
         } catch {}
+        // Garantizar tablas académicas 2.0 (DAOM-LEARNING-2.0-ACADEMIC-ENGINE)
+        try {
+          this.db.exec(`
+            CREATE TABLE IF NOT EXISTS jornadas (
+              id TEXT PRIMARY KEY,
+              capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id) ON DELETE CASCADE,
+              oferta_id TEXT REFERENCES training_editions(oferta_id) ON DELETE CASCADE,
+              nombre TEXT NOT NULL,
+              descripcion TEXT,
+              modalidad TEXT NOT NULL DEFAULT 'presencial',
+              precio_individual NUMERIC NOT NULL DEFAULT 0,
+              cupo_independiente INTEGER NOT NULL DEFAULT 0,
+              cupos_ocupados INTEGER NOT NULL DEFAULT 0,
+              orden INTEGER NOT NULL DEFAULT 0,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS encuentros (
+              id TEXT PRIMARY KEY,
+              jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+              capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id) ON DELETE CASCADE,
+              nombre TEXT NOT NULL,
+              contenido TEXT,
+              fecha TEXT NOT NULL,
+              hora_inicio TEXT NOT NULL,
+              hora_fin TEXT NOT NULL,
+              zona_horaria TEXT NOT NULL DEFAULT 'America/Argentina/Buenos_Aires',
+              duracion_horas NUMERIC NOT NULL DEFAULT 1.0,
+              modalidad TEXT NOT NULL DEFAULT 'presencial',
+              ubicacion_fisica TEXT,
+              google_calendar_event_id TEXT,
+              google_meet_url TEXT,
+              attendance_qr_token TEXT NOT NULL,
+              attendance_code TEXT NOT NULL,
+              attendance_valid_until TEXT NOT NULL,
+              orden INTEGER NOT NULL DEFAULT 0,
+              is_active INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS encuentro_attendances (
+              id TEXT PRIMARY KEY,
+              encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+              method TEXT NOT NULL,
+              attended_at TEXT NOT NULL,
+              verified_by TEXT,
+              notes TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(encuentro_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS enrollment_jornadas (
+              id TEXT PRIMARY KEY,
+              enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+              jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+              price_paid NUMERIC NOT NULL DEFAULT 0,
+              is_package INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL,
+              UNIQUE(enrollment_id, jornada_id)
+            );
+            CREATE TABLE IF NOT EXISTS waitlists (
+              id TEXT PRIMARY KEY,
+              jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              is_package_wait INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'waiting',
+              reserved_until TEXT,
+              notified_at TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              UNIQUE(jornada_id, user_id)
+            );
+            CREATE TABLE IF NOT EXISTS encuentro_recoveries (
+              id TEXT PRIMARY KEY,
+              original_encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+              target_encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+              user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+              enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+              authorized_by TEXT NOT NULL,
+              is_attended INTEGER NOT NULL DEFAULT 0,
+              attended_at TEXT,
+              reason TEXT,
+              created_at TEXT NOT NULL,
+              UNIQUE(target_encuentro_id, user_id)
+            );
+          `);
+        } catch {}
+
+        // Garantizar columnas en certificates (horas_certificadas, version, etc.)
+        try {
+          const certCols = this.db.prepare("PRAGMA table_info(certificates)").all();
+          const hasHoras = certCols.some((c: any) => c.name === "horas_certificadas");
+          if (!hasHoras) {
+            this.db.exec("ALTER TABLE certificates ADD COLUMN horas_certificadas NUMERIC DEFAULT 0");
+            this.db.exec("ALTER TABLE certificates ADD COLUMN jornadas_acreditadas TEXT");
+            this.db.exec("ALTER TABLE certificates ADD COLUMN encuentros_acreditados_count INTEGER DEFAULT 0");
+            this.db.exec("ALTER TABLE certificates ADD COLUMN version INTEGER DEFAULT 1");
+          }
+        } catch {}
+
         this.schemaApplied = true;
         return;
 

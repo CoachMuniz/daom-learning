@@ -17,6 +17,12 @@ import type {
   Enrollment,
   PaymentRecord,
   Scholarship,
+  Jornada,
+  Encuentro,
+  EncuentroAttendance,
+  EnrollmentJornada,
+  WaitlistEntry,
+  EncuentroRecovery,
   MaterialAsset,
   MaterialEntitlement,
   AttendanceRecord,
@@ -1122,7 +1128,7 @@ export async function findIntegrationEvent(idempotencyKey: string): Promise<Inte
 export async function recordIntegrationEvent(event: {
   idempotencyKey: string;
   eventType: IntegrationEvent["event_type"];
-  source: "bot" | "payment_gateway" | "admin_manual";
+  source: "bot" | "payment_gateway" | "admin_manual" | "system" | "daom_learning_admin";
   payload: Record<string, any>;
   status?: "processed" | "failed" | "ignored";
   errorMessage?: string | null;
@@ -1830,4 +1836,442 @@ export async function getScholarshipByEnrollmentId(enrollmentId: string): Promis
   s.training = (await getTrainingById(s.capacitacion_id, true)) ?? undefined;
   s.enrollment = (await getEnrollmentById(s.enrollment_id)) ?? undefined;
   return s;
+}
+
+// ==============================================================================
+// 11. Jerarquía Académica 2.0: Jornadas, Encuentros, Presentismo y Espera
+// ==============================================================================
+
+// --- JORNADAS ---
+export async function createJornada(data: {
+  capacitacionId: string;
+  ofertaId?: string | null;
+  nombre: string;
+  descripcion?: string | null;
+  modalidad?: "presencial" | "streaming" | "hibrida" | "on_demand";
+  precioIndividual?: number;
+  cupoIndependiente?: number;
+  orden?: number;
+}): Promise<Jornada> {
+  const db = getDatabase();
+  const id = `JOR-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = new Date().toISOString();
+
+  await db.run(
+    `INSERT INTO jornadas (id, capacitacion_id, oferta_id, nombre, descripcion, modalidad, precio_individual, cupo_independiente, cupos_ocupados, orden, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, ?, ?)`,
+    [
+      id,
+      data.capacitacionId,
+      data.ofertaId || null,
+      data.nombre.trim(),
+      data.descripcion?.trim() || null,
+      data.modalidad || "presencial",
+      data.precioIndividual || 0,
+      data.cupoIndependiente || 0,
+      data.orden || 0,
+      nowIso,
+      nowIso,
+    ]
+  );
+
+  return (await getJornadaById(id))!;
+}
+
+export async function getJornadaById(id: string): Promise<Jornada | null> {
+  const db = getDatabase();
+  const j = await db.get<Jornada>(`SELECT * FROM jornadas WHERE id = ?`, [id]);
+  if (!j) return null;
+  j.encuentros = await getEncuentrosForJornada(j.id);
+  return j;
+}
+
+export async function getJornadasForTraining(capacitacionId: string, onlyActive = true): Promise<Jornada[]> {
+  const db = getDatabase();
+  let sql = `SELECT * FROM jornadas WHERE capacitacion_id = ?`;
+  const params: any[] = [capacitacionId];
+  if (onlyActive) {
+    sql += ` AND is_active = 1`;
+  }
+  sql += ` ORDER BY orden ASC, created_at ASC`;
+  const rows = await db.query<Jornada>(sql, params);
+  for (const j of rows) {
+    j.encuentros = await getEncuentrosForJornada(j.id, onlyActive);
+  }
+  return rows;
+}
+
+// --- ENCUENTROS ---
+export async function createEncuentro(data: {
+  jornadaId: string;
+  capacitacionId: string;
+  nombre: string;
+  contenido?: string | null;
+  fecha: string; // YYYY-MM-DD
+  horaInicio: string; // HH:mm
+  horaFin: string; // HH:mm
+  zonaHoraria?: string;
+  duracionHoras?: number;
+  modalidad?: "presencial" | "streaming" | "on_demand";
+  ubicacionFisica?: string | null;
+  googleMeetUrl?: string | null;
+  orden?: number;
+}): Promise<Encuentro> {
+  const db = getDatabase();
+  const id = `ENC-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = new Date().toISOString();
+
+  // QR token y código de asistencia alfanumérico fijo
+  const attendanceCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const attendanceQrToken = `DAOM-ATT-${id}-${Math.random().toString(36).substring(2, 10)}`;
+
+  // Vigencia del código y QR: final del día calendario siguiente (23:59:59)
+  const [year, month, day] = data.fecha.split("-").map(Number);
+  const validUntilDate = new Date(year, month - 1, day + 1, 23, 59, 59);
+  const attendanceValidUntil = validUntilDate.toISOString();
+
+  await db.run(
+    `INSERT INTO encuentros (
+      id, jornada_id, capacitacion_id, nombre, contenido, fecha, hora_inicio, hora_fin,
+      zona_horaria, duracion_horas, modalidad, ubicacion_fisica, google_meet_url,
+      attendance_qr_token, attendance_code, attendance_valid_until, orden, is_active, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    [
+      id,
+      data.jornadaId,
+      data.capacitacionId,
+      data.nombre.trim(),
+      data.contenido?.trim() || null,
+      data.fecha,
+      data.horaInicio,
+      data.horaFin,
+      data.zonaHoraria || "America/Argentina/Buenos_Aires",
+      data.duracionHoras || 2.0,
+      data.modalidad || "presencial",
+      data.ubicacionFisica || null,
+      data.googleMeetUrl || null,
+      attendanceQrToken,
+      attendanceCode,
+      attendanceValidUntil,
+      data.orden || 0,
+      nowIso,
+      nowIso,
+    ]
+  );
+
+  return (await getEncuentroById(id))!;
+}
+
+export async function getEncuentroById(id: string): Promise<Encuentro | null> {
+  const db = getDatabase();
+  const enc = await db.get<Encuentro>(`SELECT * FROM encuentros WHERE id = ?`, [id]);
+  if (!enc) return null;
+  const count = await db.get<{ count: number }>(
+    `SELECT COUNT(*) as count FROM encuentro_attendances WHERE encuentro_id = ?`,
+    [id]
+  );
+  enc.attendances_count = count?.count || 0;
+  return enc;
+}
+
+export async function getEncuentrosForJornada(jornadaId: string, onlyActive = true): Promise<Encuentro[]> {
+  const db = getDatabase();
+  let sql = `SELECT * FROM encuentros WHERE jornada_id = ?`;
+  const params: any[] = [jornadaId];
+  if (onlyActive) {
+    sql += ` AND is_active = 1`;
+  }
+  sql += ` ORDER BY orden ASC, fecha ASC, hora_inicio ASC`;
+  const rows = await db.query<Encuentro>(sql, params);
+  for (const enc of rows) {
+    const count = await db.get<{ count: number }>(
+      `SELECT COUNT(*) as count FROM encuentro_attendances WHERE encuentro_id = ?`,
+      [enc.id]
+    );
+    enc.attendances_count = count?.count || 0;
+  }
+  return rows;
+}
+
+// --- PRESENTISMO (QR + CÓDIGO + MANUAL) ---
+export async function recordEncuentroAttendance(data: {
+  encuentroId: string;
+  userId: string;
+  enrollmentId: string;
+  method: "qr" | "code" | "manual";
+  providedCodeOrToken?: string;
+  verifiedBy?: string;
+  notes?: string;
+}): Promise<{ success: boolean; attendance?: EncuentroAttendance; message: string }> {
+  const db = getDatabase();
+
+  const encuentro = await getEncuentroById(data.encuentroId);
+  if (!encuentro) {
+    return { success: false, message: "Encuentro no encontrado." };
+  }
+
+  // 1. Validar que el alumno tenga inscripción confirmada o beca
+  const enrollment = await getEnrollmentById(data.enrollmentId);
+  if (!enrollment || enrollment.user_id !== data.userId) {
+    return { success: false, message: "Inscripción no válida para el usuario." };
+  }
+
+  if (enrollment.status !== "confirmada") {
+    return { success: false, message: "La inscripción no está confirmada (saldo de pago pendiente)." };
+  }
+
+  // 2. Si es por QR o Código, validar coincidencia y vigencia
+  if (data.method === "code") {
+    if (!data.providedCodeOrToken || data.providedCodeOrToken.trim().toUpperCase() !== encuentro.attendance_code.toUpperCase()) {
+      return { success: false, message: "Código de asistencia incorrecto." };
+    }
+  } else if (data.method === "qr") {
+    if (!data.providedCodeOrToken || data.providedCodeOrToken.trim() !== encuentro.attendance_qr_token) {
+      return { success: false, message: "Token de código QR inválido." };
+    }
+  }
+
+  // Validar vigencia temporal (hasta final del día calendario siguiente)
+  const now = new Date();
+  const validUntil = new Date(encuentro.attendance_valid_until);
+  if (now > validUntil && data.method !== "manual") {
+    return { success: false, message: "El plazo de acreditación para este encuentro ha expirado." };
+  }
+
+  // 3. Idempotencia: Verificar si ya estaba presente
+  const existing = await db.get<EncuentroAttendance>(
+    `SELECT * FROM encuentro_attendances WHERE encuentro_id = ? AND user_id = ?`,
+    [data.encuentroId, data.userId]
+  );
+  if (existing) {
+    return { success: true, attendance: existing, message: "Asistencia ya acreditada previamente." };
+  }
+
+  const id = `ATT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = now.toISOString();
+
+  await db.run(
+    `INSERT INTO encuentro_attendances (id, encuentro_id, user_id, enrollment_id, method, attended_at, verified_by, notes, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      data.encuentroId,
+      data.userId,
+      data.enrollmentId,
+      data.method,
+      nowIso,
+      data.verifiedBy || (data.method === "manual" ? "admin" : "self"),
+      data.notes || null,
+      nowIso,
+    ]
+  );
+
+  // Registrar evento de integración
+  await recordIntegrationEvent({
+    idempotencyKey: `EVENT-ATT-${id}`,
+    eventType: "encuentro.attendance.recorded",
+    source: data.method === "manual" ? "admin_manual" : "system",
+    payload: {
+      attendanceId: id,
+      encuentroId: data.encuentroId,
+      userId: data.userId,
+      enrollmentId: data.enrollmentId,
+      method: data.method,
+    },
+  });
+
+  const created = await db.get<EncuentroAttendance>(`SELECT * FROM encuentro_attendances WHERE id = ?`, [id]);
+  return { success: true, attendance: created!, message: "Asistencia acreditada con éxito." };
+}
+
+export async function getAttendancesForEncuentro(encuentroId: string): Promise<EncuentroAttendance[]> {
+  const db = getDatabase();
+  const rows = await db.query<EncuentroAttendance>(
+    `SELECT * FROM encuentro_attendances WHERE encuentro_id = ? ORDER BY attended_at ASC`,
+    [encuentroId]
+  );
+  for (const att of rows) {
+    att.user = (await findUserById(att.user_id)) ?? undefined;
+  }
+  return rows;
+}
+
+export async function getUserEncuentroAttendances(userId: string, capacitacionId?: string): Promise<EncuentroAttendance[]> {
+  const db = getDatabase();
+  let sql = `
+    SELECT ea.* FROM encuentro_attendances ea
+    JOIN encuentros e ON ea.encuentro_id = e.id
+    WHERE ea.user_id = ?
+  `;
+  const params: any[] = [userId];
+  if (capacitacionId) {
+    sql += ` AND e.capacitacion_id = ?`;
+    params.push(capacitacionId);
+  }
+  sql += ` ORDER BY ea.attended_at DESC`;
+  const rows = await db.query<EncuentroAttendance>(sql, params);
+  for (const att of rows) {
+    att.encuentro = (await getEncuentroById(att.encuentro_id)) ?? undefined;
+  }
+  return rows;
+}
+
+// --- CERTIFICADOS 2.0 (Carga Horaria y Emisión Automática) ---
+export async function issueOrUpdateCertificate2(enrollmentId: string): Promise<Certificate | null> {
+  const db = getDatabase();
+  const enrollment = await getEnrollmentById(enrollmentId);
+  if (!enrollment) return null;
+
+  // 1. Obtener todos los encuentros acreditados por el alumno
+  const attendances = await getUserEncuentroAttendances(enrollment.user_id, enrollment.capacitacion_id);
+
+  // Calcular suma de horas de encuentros acreditados
+  let totalHoras = 0;
+  const jornadasSet = new Set<string>();
+
+  for (const att of attendances) {
+    if (att.encuentro) {
+      totalHoras += Number(att.encuentro.duracion_horas || 0);
+      jornadasSet.add(att.encuentro.jornada_id);
+    }
+  }
+
+  // 2. Comprobar si ya existe certificado para esta inscripción
+  const existingCert = await db.get<Certificate>(
+    `SELECT * FROM certificates WHERE enrollment_id = ?`,
+    [enrollmentId]
+  );
+
+  const nowIso = new Date().toISOString();
+  const certCode = existingCert?.certificate_code || `DAOM-${enrollment.capacitacion_id}-${Date.now().toString(36).toUpperCase()}`;
+  const pdfUrl = existingCert?.pdf_url || `/certificados/${certCode}.pdf`;
+
+  if (existingCert) {
+    // Recalcular y actualizar certificado conservando trazabilidad
+    const nextVersion = (existingCert.version || 1) + 1;
+    await db.run(
+      `UPDATE certificates SET
+        horas_certificadas = ?,
+        jornadas_acreditadas = ?,
+        encuentros_acreditados_count = ?,
+        version = ?
+       WHERE id = ?`,
+      [totalHoras, Array.from(jornadasSet).join(", "), attendances.length, nextVersion, existingCert.id]
+    );
+    return await db.get<Certificate>(`SELECT * FROM certificates WHERE id = ?`, [existingCert.id]);
+  } else {
+    // Emisión inicial
+    const certId = `CERT-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    await db.run(
+      `INSERT INTO certificates (
+        id, enrollment_id, user_id, certificate_code, title, issue_date, pdf_url, verification_hash,
+        horas_certificadas, jornadas_acreditadas, encuentros_acreditados_count, version, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [
+        certId,
+        enrollmentId,
+        enrollment.user_id,
+        certCode,
+        enrollment.training?.titulo || "Capacitación DAOM Learning",
+        nowIso.split("T")[0],
+        pdfUrl,
+        `HASH-${certCode}`,
+        totalHoras,
+        Array.from(jornadasSet).join(", "),
+        attendances.length,
+        nowIso,
+      ]
+    );
+    return await db.get<Certificate>(`SELECT * FROM certificates WHERE id = ?`, [certId]);
+  }
+}
+
+// --- CUPOS Y LISTA DE ESPERA ---
+export async function joinWaitlist(data: {
+  jornadaId: string;
+  userId: string;
+  isPackageWait?: boolean;
+}): Promise<WaitlistEntry> {
+  const db = getDatabase();
+  const id = `WTL-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = new Date().toISOString();
+
+  await db.run(
+    `INSERT INTO waitlists (id, jornada_id, user_id, is_package_wait, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'waiting', ?, ?)
+     ON CONFLICT(jornada_id, user_id) DO UPDATE SET status = 'waiting', updated_at = excluded.updated_at`,
+    [id, data.jornadaId, data.userId, data.isPackageWait ? 1 : 0, nowIso, nowIso]
+  );
+
+  return (await db.get<WaitlistEntry>(`SELECT * FROM waitlists WHERE jornada_id = ? AND user_id = ?`, [
+    data.jornadaId,
+    data.userId,
+  ]))!;
+}
+
+export async function offerSeatFromWaitlist(jornadaId: string): Promise<WaitlistEntry | null> {
+  const db = getDatabase();
+
+  // Seleccionar cronológicamente al primero en la lista
+  const nextCandidate = await db.get<WaitlistEntry>(
+    `SELECT * FROM waitlists WHERE jornada_id = ? AND status = 'waiting' ORDER BY created_at ASC LIMIT 1`,
+    [jornadaId]
+  );
+
+  if (!nextCandidate) return null;
+
+  // Otorgar 24 horas de reserva de cupo
+  const reservedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
+
+  await db.run(
+    `UPDATE waitlists SET status = 'offered', reserved_until = ?, notified_at = ?, updated_at = ? WHERE id = ?`,
+    [reservedUntil, nowIso, nowIso, nextCandidate.id]
+  );
+
+  await recordIntegrationEvent({
+    idempotencyKey: `EVENT-WAITLIST-OFFER-${nextCandidate.id}-${Date.now()}`,
+    eventType: "waitlist.seat_offered",
+    source: "system",
+    payload: {
+      waitlistId: nextCandidate.id,
+      jornadaId,
+      userId: nextCandidate.user_id,
+      reservedUntil,
+    },
+  });
+
+  return await db.get<WaitlistEntry>(`SELECT * FROM waitlists WHERE id = ?`, [nextCandidate.id]);
+}
+
+// --- RECUPERACIONES ---
+export async function authorizeEncuentroRecovery(data: {
+  originalEncuentroId: string;
+  targetEncuentroId: string;
+  userId: string;
+  enrollmentId: string;
+  authorizedBy: string;
+  reason?: string;
+}): Promise<EncuentroRecovery> {
+  const db = getDatabase();
+  const id = `REC-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+  const nowIso = new Date().toISOString();
+
+  await db.run(
+    `INSERT INTO encuentro_recoveries (id, original_encuentro_id, target_encuentro_id, user_id, enrollment_id, authorized_by, is_attended, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+     ON CONFLICT(target_encuentro_id, user_id) DO NOTHING`,
+    [
+      id,
+      data.originalEncuentroId,
+      data.targetEncuentroId,
+      data.userId,
+      data.enrollmentId,
+      data.authorizedBy,
+      data.reason || "Recuperación de encuentro autorizada",
+      nowIso,
+    ]
+  );
+
+  return (await db.get<EncuentroRecovery>(`SELECT * FROM encuentro_recoveries WHERE id = ?`, [id]))!;
 }

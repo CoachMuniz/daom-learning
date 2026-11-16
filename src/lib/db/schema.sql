@@ -278,6 +278,10 @@ CREATE TABLE IF NOT EXISTS certificates (
   issue_date TEXT NOT NULL,
   pdf_url TEXT NOT NULL,
   verification_hash TEXT,
+  horas_certificadas NUMERIC DEFAULT 0,
+  jornadas_acreditadas TEXT,
+  encuentros_acreditados_count INTEGER DEFAULT 0,
+  version INTEGER DEFAULT 1,
   created_at TEXT NOT NULL
 );
 
@@ -401,3 +405,122 @@ CREATE TABLE IF NOT EXISTS scholarships (
 CREATE INDEX IF NOT EXISTS idx_scholarships_user ON scholarships(user_id);
 CREATE INDEX IF NOT EXISTS idx_scholarships_enrollment ON scholarships(enrollment_id);
 CREATE INDEX IF NOT EXISTS idx_scholarships_capacitacion ON scholarships(capacitacion_id);
+
+-- ==============================================================================
+-- 24. Jerarquía Académica 2.0: Jornadas, Encuentros, Presentismo y Espera
+-- Identificador: DAOM-LEARNING-2.0-ACADEMIC-ENGINE
+-- ==============================================================================
+
+-- 24.1 Jornadas Académicas
+CREATE TABLE IF NOT EXISTS jornadas (
+  id TEXT PRIMARY KEY,
+  capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id) ON DELETE CASCADE,
+  oferta_id TEXT REFERENCES training_editions(oferta_id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  descripcion TEXT,
+  modalidad TEXT NOT NULL DEFAULT 'presencial', -- 'presencial', 'streaming', 'hibrida', 'on_demand'
+  precio_individual NUMERIC NOT NULL DEFAULT 0,
+  cupo_independiente INTEGER NOT NULL DEFAULT 0,
+  cupos_ocupados INTEGER NOT NULL DEFAULT 0,
+  orden INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jornadas_capacitacion ON jornadas(capacitacion_id);
+CREATE INDEX IF NOT EXISTS idx_jornadas_oferta ON jornadas(oferta_id);
+
+-- 24.2 Encuentros Académicos
+CREATE TABLE IF NOT EXISTS encuentros (
+  id TEXT PRIMARY KEY,
+  jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+  capacitacion_id TEXT NOT NULL REFERENCES trainings(capacitacion_id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  contenido TEXT,
+  fecha TEXT NOT NULL, -- YYYY-MM-DD
+  hora_inicio TEXT NOT NULL, -- HH:mm
+  hora_fin TEXT NOT NULL, -- HH:mm
+  zona_horaria TEXT NOT NULL DEFAULT 'America/Argentina/Buenos_Aires',
+  duracion_horas NUMERIC NOT NULL DEFAULT 1.0,
+  modalidad TEXT NOT NULL DEFAULT 'presencial', -- 'presencial', 'streaming', 'on_demand'
+  ubicacion_fisica TEXT,
+  google_calendar_event_id TEXT,
+  google_meet_url TEXT,
+  attendance_qr_token TEXT NOT NULL,
+  attendance_code TEXT NOT NULL,
+  attendance_valid_until TEXT NOT NULL, -- Final del día calendario siguiente
+  orden INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_encuentros_jornada ON encuentros(jornada_id);
+CREATE INDEX IF NOT EXISTS idx_encuentros_fecha ON encuentros(fecha);
+CREATE INDEX IF NOT EXISTS idx_encuentros_code ON encuentros(attendance_code);
+
+-- 24.3 Asistencia y Presentismo a Encuentros
+CREATE TABLE IF NOT EXISTS encuentro_attendances (
+  id TEXT PRIMARY KEY,
+  encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  method TEXT NOT NULL, -- 'qr', 'code', 'manual'
+  attended_at TEXT NOT NULL,
+  verified_by TEXT, -- 'self' o email de admin
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(encuentro_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_encuentro_att_user ON encuentro_attendances(user_id);
+CREATE INDEX IF NOT EXISTS idx_encuentro_att_encuentro ON encuentro_attendances(encuentro_id);
+
+-- 24.4 Jornadas Compradas en Inscripción (Compra individual o Paquete)
+CREATE TABLE IF NOT EXISTS enrollment_jornadas (
+  id TEXT PRIMARY KEY,
+  enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+  price_paid NUMERIC NOT NULL DEFAULT 0,
+  is_package INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE(enrollment_id, jornada_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_enr_jornadas_enrollment ON enrollment_jornadas(enrollment_id);
+CREATE INDEX IF NOT EXISTS idx_enr_jornadas_jornada ON enrollment_jornadas(jornada_id);
+
+-- 24.5 Lista de Espera por Jornada
+CREATE TABLE IF NOT EXISTS waitlists (
+  id TEXT PRIMARY KEY,
+  jornada_id TEXT NOT NULL REFERENCES jornadas(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_package_wait INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'waiting', -- 'waiting', 'offered', 'accepted', 'expired', 'cancelled'
+  reserved_until TEXT, -- Plazo de 24 horas cuando se libera un cupo
+  notified_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(jornada_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_waitlist_jornada_status ON waitlists(jornada_id, status);
+
+-- 24.6 Autorizaciones de Recuperación de Encuentros
+CREATE TABLE IF NOT EXISTS encuentro_recoveries (
+  id TEXT PRIMARY KEY,
+  original_encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+  target_encuentro_id TEXT NOT NULL REFERENCES encuentros(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  enrollment_id TEXT NOT NULL REFERENCES enrollments(id) ON DELETE CASCADE,
+  authorized_by TEXT NOT NULL, -- Email de admin
+  is_attended INTEGER NOT NULL DEFAULT 0,
+  attended_at TEXT,
+  reason TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(target_encuentro_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recoveries_target ON encuentro_recoveries(target_encuentro_id);
+CREATE INDEX IF NOT EXISTS idx_recoveries_user ON encuentro_recoveries(user_id);

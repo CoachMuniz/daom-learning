@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { Training } from "@/lib/types";
 import { StatusBadge } from "@/components/StatusBadge";
+import { AcademicHierarchyManager } from "./AcademicHierarchyManager";
 
 interface TrainingsAdminProps {
   trainings: Training[];
@@ -30,6 +31,9 @@ export function TrainingsAdminView({
   const [trainingList, setTrainingList] = useState<Training[]>(trainings);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedHierarchyCapId, setSelectedHierarchyCapId] = useState<string | null>(
+    trainings[0]?.capacitacion_id || null
+  );
 
   const handleDeleteOrArchive = async (capId: string) => {
     if (!confirm(`¿Deseas archivar o eliminar la capacitación ${capId}? Si posee alumnos inscritos, será archivada de forma segura para no romper su historial.`)) {
@@ -141,6 +145,18 @@ export function TrainingsAdminView({
                     <td className="p-3 text-right">
                       <div className="inline-flex items-center gap-1.5">
                         <button
+                          onClick={() => setSelectedHierarchyCapId(t.capacitacion_id)}
+                          className={`px-2 py-1 rounded text-[11px] font-semibold flex items-center gap-1 ${
+                            selectedHierarchyCapId === t.capacitacion_id
+                              ? "bg-daom-blue text-white"
+                              : "bg-daom-neutral-100 hover:bg-daom-neutral-200 text-daom-neutral-800"
+                          }`}
+                          title="Gestionar Jornadas y Encuentros"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Jornadas</span>
+                        </button>
+                        <button
                           onClick={() => onFilterEnrollmentsByCapacitacion(t.capacitacion_id)}
                           className="px-2 py-1 bg-daom-neutral-100 hover:bg-daom-neutral-200 text-daom-neutral-800 rounded text-[11px] font-semibold flex items-center gap-1"
                           title="Ver participantes de esta capacitación"
@@ -169,6 +185,11 @@ export function TrainingsAdminView({
           </table>
         </div>
       </div>
+
+      {/* Editor Visual de Jornadas y Encuentros para la Capacitación Seleccionada */}
+      {selectedHierarchyCapId && (
+        <AcademicHierarchyManager capacitacionId={selectedHierarchyCapId} />
+      )}
     </div>
   );
 }

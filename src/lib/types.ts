@@ -253,7 +253,106 @@ export interface Certificate {
   issue_date: string;
   pdf_url: string;
   verification_hash?: string | null;
+  horas_certificadas?: number;
+  jornadas_acreditadas?: string;
+  encuentros_acreditados_count?: number;
+  version?: number;
   created_at: string;
+}
+
+export interface Jornada {
+  id: string;
+  capacitacion_id: string;
+  oferta_id?: string | null;
+  nombre: string;
+  descripcion?: string | null;
+  modalidad: "presencial" | "streaming" | "hibrida" | "on_demand";
+  precio_individual: number;
+  cupo_independiente: number;
+  cupos_ocupados: number;
+  orden: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+  encuentros?: Encuentro[];
+}
+
+export interface Encuentro {
+  id: string;
+  jornada_id: string;
+  capacitacion_id: string;
+  nombre: string;
+  contenido?: string | null;
+  fecha: string;
+  hora_inicio: string;
+  hora_fin: string;
+  zona_horaria: string;
+  duracion_horas: number;
+  modalidad: "presencial" | "streaming" | "on_demand";
+  ubicacion_fisica?: string | null;
+  google_calendar_event_id?: string | null;
+  google_meet_url?: string | null;
+  attendance_qr_token: string;
+  attendance_code: string;
+  attendance_valid_until: string;
+  orden: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+  attendances_count?: number;
+}
+
+export interface EncuentroAttendance {
+  id: string;
+  encuentro_id: string;
+  user_id: string;
+  enrollment_id: string;
+  method: "qr" | "code" | "manual";
+  attended_at: string;
+  verified_by?: string | null;
+  notes?: string | null;
+  created_at: string;
+  encuentro?: Encuentro;
+  user?: User;
+}
+
+export interface EnrollmentJornada {
+  id: string;
+  enrollment_id: string;
+  jornada_id: string;
+  price_paid: number;
+  is_package: number;
+  created_at: string;
+  jornada?: Jornada;
+}
+
+export interface WaitlistEntry {
+  id: string;
+  jornada_id: string;
+  user_id: string;
+  is_package_wait: number;
+  status: "waiting" | "offered" | "accepted" | "expired" | "cancelled";
+  reserved_until?: string | null;
+  notified_at?: string | null;
+  created_at: string;
+  updated_at: string;
+  user?: User;
+  jornada?: Jornada;
+}
+
+export interface EncuentroRecovery {
+  id: string;
+  original_encuentro_id: string;
+  target_encuentro_id: string;
+  user_id: string;
+  enrollment_id: string;
+  authorized_by: string;
+  is_attended: number;
+  attended_at?: string | null;
+  reason?: string | null;
+  created_at: string;
+  original_encuentro?: Encuentro;
+  target_encuentro?: Encuentro;
 }
 
 export interface IntegrationEvent {
@@ -273,7 +372,14 @@ export interface IntegrationEvent {
     | "modality_change.requested"
     | "recording.available"
     | "scholarship.granted.full"
-    | "scholarship.granted.partial";
+    | "scholarship.granted.partial"
+    | "encuentro.attendance.recorded"
+    | "waitlist.seat_offered"
+    | "waitlist.seat_expired"
+    | "calendar.event.created"
+    | "calendar.event.updated"
+    | "calendar.invitation.sent"
+    | "calendar.invitation.removed";
   source: "bot" | "payment_gateway" | "admin_manual" | "system" | "daom_learning_admin";
   payload: string;
   status: "processed" | "failed" | "ignored" | "pending";
