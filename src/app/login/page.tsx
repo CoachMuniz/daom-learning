@@ -360,6 +360,17 @@ function LoginForm() {
                 </Link>
               </div>
             </div>
+
+            <div className="pt-4 border-t border-daom-neutral-100 text-center text-[11px] text-daom-neutral-400">
+              Al ingresar a DAOM Learning, aceptás los{" "}
+              <Link href="/terms" target="_blank" className="underline hover:text-daom-blue">
+                Términos
+              </Link>{" "}
+              y la{" "}
+              <Link href="/privacy" target="_blank" className="underline hover:text-daom-blue">
+                Privacidad
+              </Link>.
+            </div>
           </form>
         </div>
       )}

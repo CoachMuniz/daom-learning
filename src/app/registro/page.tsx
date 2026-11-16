@@ -221,6 +221,17 @@ function RegistroForm() {
             </select>
           </div>
 
+          <div className="text-[11px] text-daom-neutral-500 text-center leading-relaxed">
+            Al registrarte en DAOM Learning, aceptás nuestros{" "}
+            <Link href="/terms" target="_blank" className="font-semibold text-daom-blue hover:underline">
+              Términos y Condiciones
+            </Link>{" "}
+            y la{" "}
+            <Link href="/privacy" target="_blank" className="font-semibold text-daom-blue hover:underline">
+              Política de Privacidad
+            </Link>.
+          </div>
+
           <button
             type="submit"
             disabled={loading}

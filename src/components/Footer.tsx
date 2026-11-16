@@ -156,11 +156,11 @@ export function Footer() {
         <div className="mt-12 pt-8 border-t border-daom-neutral-200 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-daom-neutral-500">
           <p>© {new Date().getFullYear()} DAOM Weightlifting. Todos los derechos reservados.</p>
           <div className="flex flex-wrap items-center gap-4">
-            <Link href="/legal/terminos" className="hover:text-daom-blue">
+            <Link href="/terms" className="hover:text-daom-blue">
               Términos y Condiciones
             </Link>
             <span className="text-daom-neutral-300">•</span>
-            <Link href="/legal/privacidad" className="hover:text-daom-blue">
+            <Link href="/privacy" className="hover:text-daom-blue">
               Privacidad de Datos
             </Link>
             <span className="text-daom-neutral-300">•</span>
