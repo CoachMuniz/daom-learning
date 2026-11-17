@@ -111,6 +111,13 @@ class PostgresDatabase implements IDatabase {
         // Ignorar si ya existe
       }
 
+      // Garantizar columna whatsapp_group_url en Postgres (DAOM-LEARNING-MANUAL-ENROLLMENTS-01)
+      try {
+        await this.pool.query("ALTER TABLE training_editions ADD COLUMN IF NOT EXISTS whatsapp_group_url TEXT");
+      } catch (err) {
+        // Ignorar si ya existe
+      }
+
       this.schemaApplied = true;
   }
 

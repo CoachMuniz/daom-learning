@@ -24,10 +24,20 @@ export async function POST(request: Request) {
     // 1. Verificar si ya existen jornadas para esta capacitación
     const existingJornadas = await getJornadasForTraining(capacitacionId, false);
     if (existingJornadas.length > 0) {
+      // Garantizar que la vigencia del presentismo para el 29/11/2026 sea exactamente 2026-12-01T02:59:59.000Z
+      // (23:59:59 en America/Argentina/Buenos_Aires UTC-3 del día posterior)
+      const correctValidUntil = "2026-12-01T02:59:59.000Z";
+      await db.run(
+        `UPDATE encuentros SET attendance_valid_until = ?, updated_at = ?
+         WHERE capacitacion_id = ? AND fecha = '2026-11-29' AND attendance_valid_until != ?`,
+        [correctValidUntil, new Date().toISOString(), capacitacionId, correctValidUntil]
+      );
+
+      const refreshedJornadas = await getJornadasForTraining(capacitacionId, false);
       return NextResponse.json({
         success: true,
         message: "El Seminario del 29/11 ya se encuentra incorporado a la arquitectura académica 2.0.",
-        jornadas: existingJornadas,
+        jornadas: refreshedJornadas,
         canary: "DAOM-FORMACION-SHEET-01",
       });
     }
