@@ -297,8 +297,21 @@ export async function syncGoogleSheetsCatalog(options: SyncOptions = {}): Promis
       const horaFin = row["hora_fin"] || null;
       const zonaHoraria = row["zona_horaria"] || "America/Argentina/Buenos_Aires";
       const modalidades = row["modalidades"] || "presencial, streaming, on_demand";
-      const sede = row["sede"] || "Club DAOM, Av. Varela 1800, Flores, CABA";
-      const enlaceInscripcion = row["enlace_inscripcion"] || null;
+
+      // Normalización institucional de Sede:
+      // Se eliminan referencias a Zoom y se normalizan a Google Meet (streaming) / Club DAOM
+      let sede = row["sede"] || "Club DAOM, Av. Varela 1800, Flores, CABA";
+      if (/zoom/i.test(sede)) {
+        sede = sede.replace(/zoom/gi, "Google Meet (streaming)");
+      }
+
+      // Normalización de Enlace de Inscripción:
+      // Eliminar dependencia de Google Forms externos y canalizar al flujo nativo institucional
+      let enlaceInscripcion = row["enlace_inscripcion"] || null;
+      if (enlaceInscripcion && (enlaceInscripcion.includes("forms.gle") || enlaceInscripcion.includes("docs.google.com/forms"))) {
+        enlaceInscripcion = `/capacitacion/${capId}`;
+      }
+
       const cupoPresencial = parseInt(row["cupo_presencial"] || "0", 10) || 0;
       const cupoStreaming = parseInt(row["cupo_streaming"] || "0", 10) || 0;
       const estadoComercial = row["estado_comercial"] || "proximamente";

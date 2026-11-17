@@ -863,7 +863,7 @@ export async function recordPayment(data: {
 
   // Si el pago es aprobado, actualizar la inscripción y monto pagado de forma idempotente
   if (data.status === "approved") {
-    const enr = await db.get<Enrollment>(`SELECT * FROM enrollments WHERE id = ?`, [data.enrollmentId]);
+    const enr = await getEnrollmentById(data.enrollmentId);
     if (enr) {
       if (enr.status !== "confirmada") {
         await db.run(
@@ -878,6 +878,24 @@ export async function recordPayment(data: {
       }
       // Regla obligatoria: Habilitar inmediatamente el material complementario ZIP tras pago confirmado
       await autoGrantMaterialForEnrollment(enr.user_id, enr.capacitacion_id, enr.id);
+
+      // Si la inscripción incluye modalidad streaming, asegurar la invitación a los encuentros virtuales con Google Calendar
+      if (enr.modality_id === "streaming" && enr.user?.email) {
+        try {
+          const streamingEncuentros = await db.query<Encuentro>(
+            `SELECT * FROM encuentros WHERE capacitacion_id = ? AND modalidad IN ('streaming', 'hibrida') AND is_active = 1`,
+            [enr.capacitacion_id]
+          );
+          const { inviteParticipantToCalendarEvent } = await import("@/lib/calendar/googleCalendar");
+          for (const enc of streamingEncuentros) {
+            if (enc.google_calendar_event_id) {
+              await inviteParticipantToCalendarEvent(enc.google_calendar_event_id, enr.user.email, enc.id);
+            }
+          }
+        } catch (calErr) {
+          console.error("[Calendar Auto-Invite Error]", calErr);
+        }
+      }
     }
   }
 
@@ -1925,10 +1943,13 @@ export async function createEncuentro(data: {
   const attendanceCode = Math.random().toString(36).substring(2, 8).toUpperCase();
   const attendanceQrToken = `DAOM-ATT-${id}-${Math.random().toString(36).substring(2, 10)}`;
 
-  // Vigencia del código y QR: final del día calendario siguiente (23:59:59)
+  // Vigencia del código y QR: final del día calendario siguiente (23:59:59) en America/Argentina/Buenos_Aires (UTC-3)
   const [year, month, day] = data.fecha.split("-").map(Number);
-  const validUntilDate = new Date(year, month - 1, day + 1, 23, 59, 59);
-  const attendanceValidUntil = validUntilDate.toISOString();
+  const nextDay = new Date(Date.UTC(year, month - 1, day + 1));
+  const ny = nextDay.getUTCFullYear();
+  const nm = String(nextDay.getUTCMonth() + 1).padStart(2, "0");
+  const nd = String(nextDay.getUTCDate()).padStart(2, "0");
+  const attendanceValidUntil = new Date(`${ny}-${nm}-${nd}T23:59:59-03:00`).toISOString();
 
   await db.run(
     `INSERT INTO encuentros (
@@ -1982,6 +2003,25 @@ export async function getEncuentrosForJornada(jornadaId: string, onlyActive = tr
     sql += ` AND is_active = 1`;
   }
   sql += ` ORDER BY orden ASC, fecha ASC, hora_inicio ASC`;
+  const rows = await db.query<Encuentro>(sql, params);
+  for (const enc of rows) {
+    const count = await db.get<{ count: number }>(
+      `SELECT COUNT(*) as count FROM encuentro_attendances WHERE encuentro_id = ?`,
+      [enc.id]
+    );
+    enc.attendances_count = count?.count || 0;
+  }
+  return rows;
+}
+
+export async function getEncuentrosForTraining(capacitacionId: string, onlyActive = true): Promise<Encuentro[]> {
+  const db = getDatabase();
+  let sql = `SELECT * FROM encuentros WHERE capacitacion_id = ?`;
+  const params: any[] = [capacitacionId];
+  if (onlyActive) {
+    sql += ` AND is_active = 1`;
+  }
+  sql += ` ORDER BY fecha ASC, hora_inicio ASC, orden ASC`;
   const rows = await db.query<Encuentro>(sql, params);
   for (const enc of rows) {
     const count = await db.get<{ count: number }>(
@@ -2136,6 +2176,17 @@ export async function issueOrUpdateCertificate2(enrollmentId: string): Promise<C
     }
   }
 
+  // Regla Académica Institucional:
+  // Para la edición confirmada del Seminario de Biomecánica 29/11/2026 (OF-BIOMEC-2026-11 o módulos 4.5h reloj c/u):
+  // 1 hora cátedra = 45 min. La jornada modular completa (2 módulos de 4.5h reloj = 9h reloj) acredita 10 horas cátedra oficiales.
+  if (
+    enrollment.capacitacion_id === "SEM-BIOMECANICA" &&
+    attendances.length >= 2 &&
+    (enrollment.oferta_id === "OF-BIOMEC-2026-11" || totalHoras >= 9)
+  ) {
+    totalHoras = 10;
+  }
+
   // 2. Comprobar si ya existe certificado para esta inscripción
   const existingCert = await db.get<Certificate>(
     `SELECT * FROM certificates WHERE enrollment_id = ?`,
@@ -2274,4 +2325,23 @@ export async function authorizeEncuentroRecovery(data: {
   );
 
   return (await db.get<EncuentroRecovery>(`SELECT * FROM encuentro_recoveries WHERE id = ?`, [id]))!;
+}
+
+// --- ACTUALIZACIÓN DE CALENDAR Y MEET EN ENCUENTRO ---
+export async function updateEncuentroCalendarAndMeet(
+  encuentroId: string,
+  googleCalendarEventId: string | null,
+  googleMeetUrl: string | null
+): Promise<Encuentro | null> {
+  const db = getDatabase();
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE encuentros SET
+      google_calendar_event_id = ?,
+      google_meet_url = ?,
+      updated_at = ?
+     WHERE id = ?`,
+    [googleCalendarEventId, googleMeetUrl, nowIso, encuentroId]
+  );
+  return await getEncuentroById(encuentroId);
 }
