@@ -187,6 +187,13 @@ export async function getEditionsForTraining(
 
   for (const edition of editions) {
     edition.precios = await getPricesForEdition(edition.oferta_id, onlyPublished);
+    // SEGURIDAD INSTITUCIONAL (FASE 1):
+    // Si la consulta es pública (onlyPublished === true), jamás exponer `whatsapp_group_url`
+    // en la respuesta pública. El enlace solo se recupera mediante endpoints autenticados
+    // previa verificación de inscripción confirmada.
+    if (onlyPublished) {
+      delete (edition as any).whatsapp_group_url;
+    }
   }
 
   return editions;

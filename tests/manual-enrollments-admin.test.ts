@@ -77,7 +77,8 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
       modalityId: "presencial",
       paymentMethod: "efectivo",
       paymentStatus: "acreditado",
-      amountReceived: 41368.8,
+      amountReceived: 51711,
+      overrideAmount: 51711,
       notes: "Cobro presencial en administración del club",
     });
 
@@ -86,7 +87,7 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
     const data = await res.json();
     expect(data.success).toBe(true);
     expect(data.enrollment.status).toBe("confirmada");
-    expect(data.enrollment.amount_paid).toBe(41368.8);
+    expect(data.enrollment.amount_paid).toBe(51711);
     expect(data.payment.status).toBe("approved");
 
     // Verificar que el material complementario quedó automáticamente habilitado
@@ -104,7 +105,8 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
       modalityId: "presencial",
       paymentMethod: "efectivo",
       paymentStatus: "acreditado",
-      amountReceived: 41368.8,
+      amountReceived: 51711,
+      overrideAmount: 51711,
     });
 
     const res = await manualEnrollmentHandler(req);
@@ -127,7 +129,8 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
       modalityId: "streaming",
       paymentMethod: "transferencia",
       paymentStatus: "declarado",
-      amountReceived: 41368.8,
+      amountReceived: 51711,
+      overrideAmount: 51711,
       paymentReference: `TRF-BANCO-${timestamp}`,
       notes: "Adjuntó comprobante de transferencia bancaria pendiente de conciliar",
     });
@@ -159,7 +162,7 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
 
     const reqConfirm = makeJsonRequest("http://localhost:3000/api/admin/inscripciones/confirmar-pago", {
       enrollmentId: enr!.id,
-      amount: 41368.8,
+      amount: 51711,
       paymentMethod: "transferencia",
       paymentReference: `TRF-ACREDITADA-${timestamp}`,
       notes: "Verificado en extracto bancario oficial",
@@ -185,7 +188,7 @@ describe("DAOM Learning — Inscripciones Manuales y Administración", () => {
 
     const reqConfirmAgain = makeJsonRequest("http://localhost:3000/api/admin/inscripciones/confirmar-pago", {
       enrollmentId: enr!.id,
-      amount: 41368.8,
+      amount: 51711,
     });
 
     const res = await confirmPaymentHandler(reqConfirmAgain);
